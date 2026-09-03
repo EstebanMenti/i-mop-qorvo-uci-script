@@ -64,13 +64,42 @@ Los siguientes formatos de payload están confirmados tanto contra `fira.py`/`fi
 | `SESSION_GET_STATE` | `session_handle` (4 bytes LE). | `Status` (1) + `SessionState` (1). |
 | `SESSION_GET_COUNT` | Vacío. | `Status` (1) + cantidad de sesiones (1). |
 | `SESSION_STATUS_NTF` (notificación) | — | `session_id`/`session_handle` (4 bytes LE) + `SessionState` (1) + código de motivo (1, ver `SessionStateChangeReason`). |
-| `RANGING_START` | `session_handle` (4 bytes LE). | `Status` (1). Requiere que la sesión ya haya sido configurada (`SESSION_SET_APP_CONFIG`, diferido) — sin eso, confirmado contra hardware real que devuelve `Status.ERROR_SESSION_NOT_CONFIGURED`. |
+| `SESSION_SET_APP_CONFIG` | `session_handle` (4 bytes LE) + bloque TVS (ver tabla y nota abajo). | `Status` (1). Si `Status == OK`, el firmware igual agrega un byte extra (`0x00`, cantidad de rechazados) que la librería de referencia ni siquiera lee — nuestro parser lo tolera sin exigirlo. Si `Status != OK`: + cantidad de parámetros rechazados (1) + por cada uno, tag (1) + `Status` puntual (1). |
+| `RANGING_START` | `session_handle` (4 bytes LE). | `Status` (1). Requiere que la sesión ya haya sido configurada con `SESSION_SET_APP_CONFIG` — sin eso, confirmado contra hardware real que devuelve `Status.ERROR_SESSION_NOT_CONFIGURED`. Con la sesión configurada, confirmado que devuelve `Status.OK` y dispara `RANGING_DATA_NTF` en cada ronda (ver tabla de notificaciones). |
 | `RANGING_STOP` | `session_handle` (4 bytes LE). | `Status` (1). |
 | `RANGING_GET_COUNT` | `session_handle` (4 bytes LE). | `Status` (1) + cantidad de mediciones (4 bytes LE), presente **solo** si `Status == OK`. |
 
 > **Advertencia confirmada contra hardware real — `session_handle` puede diferir de `session_id`:** al pedir `SESSION_INIT` con `session_id=7`, el firmware devolvió `session_handle=1`. Usar despues ese `7` (el id original) en `SESSION_GET_STATE`/`SESSION_DEINIT` devuelve `Status.ERROR_SESSION_NOT_EXIST`; hay que usar el `session_handle` de la Response de `SESSION_INIT`. El cliente Python de referencia de Qorvo (`fira.py`) no hace esta distinción — reutiliza la misma variable `sid` en todos los métodos, asumiendo implícitamente que son iguales — por lo que **no se debe copiar ese supuesto sin verificar**. `src/dwm3001c_uci/core/client.py` ya reflejó esto: `session_deinit()`/`get_session_state()` reciben `session_handle`, no `session_id`.
 >
 > También se confirmó que `CORE_RESET` limpia sesiones activas colgadas de una corrida anterior, emitiendo `SESSION_STATUS_NTF` (estado `DEINIT`) por cada una.
+
+### 2.2 `SESSION_SET_APP_CONFIG`: bloque TVS y máquina de estados confirmada
+
+`SESSION_SET_APP_CONFIG` usa una codificación genérica Tag-Value-Size, distinta de los payloads fijos de arriba: `count` (1 byte) + por cada parámetro, `tag` (1) + `longitud` (1) + `valor`. Formato confirmado contra `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/core.py` (función `tvs_to_bytes`) y `fira_app.py` (tabla de longitudes `App.defs`, que define ~90 parámetros en total — este proyecto solo implementa la codificación de 15, ver `uci/app_config.py`):
+
+| Parámetro (`AppConfigParam`) | Tag | Longitud | Valor usado por este proyecto |
+|---|---|---|---|
+| `DEVICE_TYPE` | `0x00` | 1 | `DeviceType.CONTROLLER`/`CONTROLEE` |
+| `RANGING_ROUND_USAGE` | `0x01` | 1 | `RangingRoundUsage.DS_TWR_DEFERRED` (default) |
+| `STS_CONFIG` | `0x02` | 1 | `0` (Static) |
+| `MULTI_NODE_MODE` | `0x03` | 1 | `MultiNodeMode.UNICAST` (default) |
+| `CHANNEL_NUMBER` | `0x04` | 1 | `9` (default) |
+| `DEVICE_MAC_ADDRESS` | `0x06` | 2 | elegido por el llamador |
+| `DST_MAC_ADDRESS` | `0x07` | 2 por elemento (es una lista) | elegido por el llamador |
+| `SLOT_DURATION` | `0x08` | 2 | `2400` (default, en unidades RSTU) |
+| `RANGING_INTERVAL` | `0x09` | 4 | `200` (default, ms) |
+| `DEVICE_ROLE` | `0x11` | 1 | `DeviceRole.INITIATOR`/`RESPONDER` |
+| `RFRAME_CONFIG` | `0x12` | 1 | `3` (default, "SP3"/`Qp3` en `fira_enums.py`) |
+| `PREAMBLE_CODE_INDEX` | `0x14` | 1 | `10` (default) |
+| `SFD_ID` | `0x15` | 1 | `2` (default) |
+| `SLOTS_PER_RR` | `0x1B` | 1 | `25` (default) |
+| `SCHEDULE_MODE` | `0x22` | 1 | `1` (default, "time") |
+
+> **Hallazgo confirmado contra hardware real:** `run_fira_twr.py` del SDK etiqueta solo los primeros 5 (`DEVICE_TYPE`, `DEVICE_ROLE`, `MULTI_NODE_MODE`, `RANGING_ROUND_USAGE`, `DEVICE_MAC_ADDRESS`) como *"Fira Mandatory/minimal session config"*. **Eso no alcanza en la práctica**: se probó configurar una sesión con solo esos 5 (más `DST_MAC_ADDRESS`/`CHANNEL_NUMBER`) y el firmware acepta cada parámetro individualmente (`Status.OK`, ningún parámetro rechazado), pero `RANGING_START` seguía devolviendo `Status.ERROR_SESSION_NOT_CONFIGURED`. Agregando los 9 parámetros restantes de la tabla (con los mismos valores por defecto que usa `run_fira_twr.py`), `RANGING_START` pasó a devolver `Status.OK` y la sesión arrancó a rangear de verdad.
+>
+> **Máquina de estados de sesión confirmada de punta a punta contra hardware real:** `SESSION_INIT` → `SessionState.INIT` (0) → `SESSION_SET_APP_CONFIG` exitoso → `SessionState.IDLE` (3) → `RANGING_START` → `SessionState.ACTIVE` (2) → `RANGING_STOP` → `SessionState.IDLE` (3) → `SESSION_DEINIT` → `SessionState.DEINIT` (1). Cada transición se confirmó tanto vía `SESSION_GET_STATE` como vía la `SESSION_STATUS_NTF` correspondiente.
+>
+> Todo esto se probó con **una sola placa, sin un segundo dispositivo que responda**: el `Controller` corre igual las rondas de ranging configuradas (confirmado: 9 rondas en ~1 segundo con `ranging_interval_ms=200`) y emite `RANGING_DATA_NTF` en cada una, aunque no haya `Controlee` — ver notificación en la sección siguiente. No se validó una medición de distancia real entre dos dispositivos.
 
 ## 3. Notificaciones a manejar de forma asíncrona
 
@@ -79,7 +108,22 @@ Al menos las siguientes `Notification` pueden llegar sin estar correlacionadas 1
 - `CORE_DEVICE_STATUS_NTF` (`GID=0x00`, `OID=0x01`)
 - `CORE_GENERIC_ERROR_NTF` (`GID=0x00`, `OID=0x07`)
 - `SESSION_STATUS_NTF` (`GID=0x01`, `OID=0x02`)
-- Notificaciones de datos de ranging: `fira.py` del SDK sugiere `GID=0x02` (Ranging), `OID=0x00` (mismo que `RANGING_START`) con `MT=NOTIFICATION` — **`[Sin confirmar]`**, no se pudo verificar contra hardware real con una sola placa (se necesita una sesión de ranging exitosa entre dos dispositivos). En la CLI de texto del proyecto hermano el equivalente es `SESSION_INFO_NTF`.
+- `RANGING_DATA_NTF` (`GID=0x02`, `OID=0x00` — mismo GID/OID que el comando `RANGING_START`, distinguible por `MT=NOTIFICATION`). **Confirmado contra hardware real** (antes `[Sin confirmar]`): se emite en cada ronda de ranging, incluso sin un segundo dispositivo que responda. Header (25 bytes, formato confirmado contra `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/qorvo_msg.py`, clase `RangingData`) — implementado en `core/models.py::parse_ranging_data_notification`:
+
+  | Campo | Bytes | Descripción |
+  |---|---|---|
+  | `sequence_number` | 0-3 | Contador de ronda, empieza en 0 |
+  | `session_handle` | 4-7 | — |
+  | RFU | 8 | — |
+  | `ranging_interval_ms` | 9-12 | Coincide con el `RANGING_INTERVAL` configurado |
+  | `measurement_type` | 13 | `RangingMeasType` (`TWR`=1 confirmado) |
+  | RFU | 14 | — |
+  | modo de direccionamiento MAC | 15 | `0`→2 bytes, `1`→8 bytes |
+  | `primary_session_id` | 16-19 | `0` si no aplica |
+  | RFU | 20-23 | — |
+  | `n_measurements` | 24 | Cantidad de mediciones que siguen |
+
+  Las mediciones individuales (bytes 25 en adelante, formato depende de `measurement_type`) **no se decodifican todavía** — quedan crudas en `RangingDataNotification.measurements_raw`. En la CLI de texto del proyecto hermano el equivalente es `SESSION_INFO_NTF`.
 
 ## 4. Códigos de estado (`Status`)
 

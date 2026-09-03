@@ -9,21 +9,30 @@ validacion, fase F6) pueda inspeccionarlas.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 
 from dwm3001c_uci.core.errors import UciTimeoutError
 from dwm3001c_uci.core.models import (
+    AppConfigResult,
     DeviceInfo,
     SessionInitResult,
+    parse_app_config_response,
     parse_device_info,
     parse_session_init_result,
 )
 from dwm3001c_uci.transport.serial_link import Transport
+from dwm3001c_uci.uci.app_config import encode_app_config
 from dwm3001c_uci.uci.enums import (
+    AppConfigParam,
+    DeviceRole,
+    DeviceType,
     Gid,
     MessageType,
+    MultiNodeMode,
     OidCore,
     OidRanging,
     OidSession,
+    RangingRoundUsage,
     SessionType,
     Status,
 )
@@ -113,6 +122,78 @@ class UciClient:
         message = self._send_command_and_wait_response(Gid.SESSION, OidSession.INIT, payload)
         return parse_session_init_result(message.payload)
 
+    def session_set_app_config(
+        self,
+        session_handle: int,
+        *,
+        device_type: DeviceType,
+        device_role: DeviceRole,
+        device_mac_address: int,
+        dst_mac_addresses: Sequence[int],
+        multi_node_mode: MultiNodeMode = MultiNodeMode.UNICAST,
+        ranging_round_usage: RangingRoundUsage = RangingRoundUsage.DS_TWR_DEFERRED,
+        channel_number: int = 9,
+        sts_config: int = 0,
+        rframe_config: int = 3,
+        schedule_mode: int = 1,
+        preamble_code_index: int = 10,
+        sfd_id: int = 2,
+        slot_duration_us: int = 2400,
+        ranging_interval_ms: int = 200,
+        slots_per_rr: int = 25,
+    ) -> AppConfigResult:
+        """Envia `SESSION_SET_APP_CONFIG` con un conjunto minimo de parametros.
+
+        No es un codec TVS generico como el de la libreria de referencia de
+        Qorvo, que soporta los ~90 parametros de `App.defs`. Cubre solo lo
+        necesario para levantar una sesion basica de TWR (Two-Way Ranging):
+
+        - Los 5 que `run_fira_twr.py` del SDK etiqueta como *"Fira
+          Mandatory/minimal session config"*: `device_type`, `device_role`,
+          `multi_node_mode`, `ranging_round_usage`, `device_mac_address`.
+        - `dst_mac_addresses` y `channel_number`, necesarios para que dos
+          dispositivos se encuentren en el mismo canal.
+        - `sts_config`, `rframe_config`, `schedule_mode`,
+          `preamble_code_index`, `sfd_id`, `slot_duration_us`,
+          `ranging_interval_ms`, `slots_per_rr`: sin enums propios todavia
+          (se pasan como `int` crudo), con los mismos valores por defecto que
+          usa `run_fira_twr.py`. **Confirmado contra hardware real** que son
+          necesarios ademas de los 5 "mandatory": con solo esos 5, el
+          firmware acepta cada parametro pero `RANGING_START` sigue
+          devolviendo `Status.ERROR_SESSION_NOT_CONFIGURED`.
+
+        No soporta el resto de los parametros de `App.defs` (STS
+        provisionado/con clave, diagnosticos Qorvo, DL-TDoA, ...).
+
+        Validado contra hardware real con una sola placa: el firmware acepta
+        este conjunto sin rechazar ningun parametro. **No se validó** todavía
+        que alcance para completar un ciclo de ranging exitoso con medición
+        de distancia — eso requiere una segunda placa. Ver
+        docs/plan-implementacion.md.
+        """
+        params: list[tuple[int, int | Sequence[int]]] = [
+            (AppConfigParam.DEVICE_TYPE, int(device_type)),
+            (AppConfigParam.DEVICE_ROLE, int(device_role)),
+            (AppConfigParam.MULTI_NODE_MODE, int(multi_node_mode)),
+            (AppConfigParam.RANGING_ROUND_USAGE, int(ranging_round_usage)),
+            (AppConfigParam.DEVICE_MAC_ADDRESS, device_mac_address),
+            (AppConfigParam.DST_MAC_ADDRESS, list(dst_mac_addresses)),
+            (AppConfigParam.CHANNEL_NUMBER, channel_number),
+            (AppConfigParam.STS_CONFIG, sts_config),
+            (AppConfigParam.RFRAME_CONFIG, rframe_config),
+            (AppConfigParam.SCHEDULE_MODE, schedule_mode),
+            (AppConfigParam.PREAMBLE_CODE_INDEX, preamble_code_index),
+            (AppConfigParam.SFD_ID, sfd_id),
+            (AppConfigParam.SLOT_DURATION, slot_duration_us),
+            (AppConfigParam.RANGING_INTERVAL, ranging_interval_ms),
+            (AppConfigParam.SLOTS_PER_RR, slots_per_rr),
+        ]
+        payload = session_handle.to_bytes(4, "little") + encode_app_config(params)
+        message = self._send_command_and_wait_response(
+            Gid.SESSION, OidSession.SET_APP_CONFIG, payload
+        )
+        return parse_app_config_response(message.payload)
+
     def session_deinit(self, session_handle: int) -> Status:
         """Envia `SESSION_DEINIT`. Payload: session_handle (4 bytes LE).
 
@@ -144,11 +225,14 @@ class UciClient:
     def ranging_start(self, session_handle: int) -> Status:
         """Envia `RANGING_START`. Payload: session_handle (4 bytes LE).
 
-        No decodifica notificaciones de datos de ranging (`RANGING_DATA_NTF`,
-        mismo GID/OID que este comando pero `MT=NOTIFICATION`): no se pudo
-        validar su formato contra hardware real con un solo dispositivo
-        conectado (se necesitan dos placas en una sesion Controller/Controlee
-        real). Quedan en `UciClient.notifications` sin parsear.
+        Con la sesion configurada (`session_set_app_config`), el firmware
+        emite una `RANGING_DATA_NTF` (mismo GID/OID que este comando pero
+        `MT=NOTIFICATION`) por cada ronda de ranging -- confirmado contra
+        hardware real, incluso sin un segundo dispositivo que responda. Esas
+        notificaciones quedan crudas en `UciClient.notifications`: decodificar
+        el header con `core.models.parse_ranging_data_notification()`. Las
+        mediciones individuales dentro de esa notificacion (que dependen del
+        tipo de medicion, p. ej. TWR) no estan implementadas todavia.
         """
         payload = session_handle.to_bytes(4, "little")
         message = self._send_command_and_wait_response(Gid.RANGING, OidRanging.START, payload)

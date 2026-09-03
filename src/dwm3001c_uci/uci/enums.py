@@ -147,6 +147,95 @@ class SessionType(IntEnum):
     DEVICE_TEST_MODE = 0xD0
 
 
+class AppConfigParam(IntEnum):
+    """Tags de parametro de `SESSION_SET_APP_CONFIG`/`GET_APP_CONFIG` soportados.
+
+    Confirmado contra `fira_app.py` del SDK (clase `App`, release
+    `QM33SDK-1.1.1`), que define ~90 parametros en total. Este proyecto solo
+    implementa la codificacion de un subconjunto: los 5 que el propio script
+    de referencia de Qorvo (`run_fira_twr.py`) etiqueta como *"Fira
+    Mandatory/minimal session config"*, mas `CHANNEL_NUMBER` (necesario para
+    que dos placas coincidan en el mismo canal) y un conjunto adicional de
+    parametros de timing/PHY que, **confirmado contra hardware real**, hacen
+    falta ademas de los 5 "mandatory" para que `RANGING_START` deje de
+    devolver `Status.ERROR_SESSION_NOT_CONFIGURED` (con solo los 5 originales
+    el firmware acepta cada parametro individualmente pero el gate de sesion
+    configurada no se levanta). Ver `uci/app_config.py` y docs/protocolo-uci.md.
+    """
+
+    DEVICE_TYPE = 0x00
+    RANGING_ROUND_USAGE = 0x01
+    STS_CONFIG = 0x02
+    MULTI_NODE_MODE = 0x03
+    CHANNEL_NUMBER = 0x04
+    DEVICE_MAC_ADDRESS = 0x06
+    DST_MAC_ADDRESS = 0x07
+    SLOT_DURATION = 0x08
+    RANGING_INTERVAL = 0x09
+    DEVICE_ROLE = 0x11
+    RFRAME_CONFIG = 0x12
+    PREAMBLE_CODE_INDEX = 0x14
+    SFD_ID = 0x15
+    SLOTS_PER_RR = 0x1B
+    SCHEDULE_MODE = 0x22
+
+
+class DeviceType(IntEnum):
+    """Valor del parametro `AppConfigParam.DEVICE_TYPE` (confirmado)."""
+
+    CONTROLEE = 0x00
+    CONTROLLER = 0x01
+
+
+class RangingMeasType(IntEnum):
+    """Tipo de medicion en el header de `RANGING_DATA_NTF` (confirmado).
+
+    Fuente: `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/qorvo_msg.py`, clase
+    `RangingMeas`. El formato de cada medicion individual (que depende de
+    este tipo) no esta implementado todavia -- ver
+    `core/models.py::parse_ranging_data_notification`.
+    """
+
+    OWR_ULTDOA = 0
+    TWR = 1
+    OWR_DLTDOA = 2
+    OWR_AOA = 3
+
+
+class DeviceRole(IntEnum):
+    """Valor del parametro `AppConfigParam.DEVICE_ROLE` (confirmado contra `fira_enums.py`).
+
+    Solo se transcriben los roles relevantes a TWR clasico; `fira_enums.py`
+    define ademas roles de DL-TDoA/OWR (`UtSyncAnchor`, `DtAnchor`, ...) fuera
+    de alcance de este proyecto.
+    """
+
+    RESPONDER = 0x00
+    INITIATOR = 0x01
+
+
+class MultiNodeMode(IntEnum):
+    """Valor del parametro `AppConfigParam.MULTI_NODE_MODE` (confirmado)."""
+
+    UNICAST = 0x00
+    ONE_TO_MANY = 0x01
+    MANY_TO_MANY = 0x02
+
+
+class RangingRoundUsage(IntEnum):
+    """Valor del parametro `AppConfigParam.RANGING_ROUND_USAGE` (confirmado).
+
+    Solo se transcriben los usos de TWR clasico; `fira_enums.py` define
+    ademas variantes DL/OWR (`OwrUltdoa`, `OwrDltdoa`, `OwrAoa`, ...) fuera de
+    alcance de este proyecto.
+    """
+
+    SS_TWR_DEFERRED = 0x01
+    DS_TWR_DEFERRED = 0x02
+    SS_TWR = 0x03
+    DS_TWR = 0x04
+
+
 class SessionState(IntEnum):
     """Estado de una sesion, payload de `SESSION_STATUS_NTF` y de `SESSION_GET_STATE`."""
 

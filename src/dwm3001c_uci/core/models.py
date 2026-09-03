@@ -14,11 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dwm3001c_uci.core.errors import UciPayloadError
-from dwm3001c_uci.uci.enums import SessionState, Status
+from dwm3001c_uci.uci.enums import RangingMeasType, SessionState, Status
 
 MIN_DEVICE_INFO_PAYLOAD_SIZE = 9
 SESSION_INIT_RESPONSE_SIZE = 5
 SESSION_STATUS_NOTIFICATION_SIZE = 6
+RANGING_DATA_NOTIFICATION_HEADER_SIZE = 25
 
 
 @dataclass(frozen=True)
@@ -122,4 +123,103 @@ def parse_session_status_notification(payload: bytes) -> SessionStatusNotificati
         session_id=int.from_bytes(payload[0:4], "little"),
         state=SessionState(payload[4]),
         reason_code=payload[5],
+    )
+
+
+@dataclass(frozen=True)
+class RejectedAppConfigParam:
+    """Un parametro de `SESSION_SET_APP_CONFIG` que el firmware rechazo, con su motivo."""
+
+    param: int
+    status: Status
+
+
+@dataclass(frozen=True)
+class AppConfigResult:
+    """Resultado decodificado de una Response de `SESSION_SET_APP_CONFIG`.
+
+    Formato confirmado contra `fira.py` del SDK (funcion `session_set_app_config`)
+    -- **no es fijo**: si `status == Status.OK` la Response no trae nada mas;
+    si no, trae la cantidad de parametros rechazados y, por cada uno, su tag y
+    el `Status` especifico de ese parametro.
+    """
+
+    status: Status
+    rejected: tuple[RejectedAppConfigParam, ...]
+
+
+def parse_app_config_response(payload: bytes) -> AppConfigResult:
+    """Decodifica el payload de una Response de `SESSION_SET_APP_CONFIG`."""
+    if not payload:
+        raise UciPayloadError("payload de SESSION_SET_APP_CONFIG vacio")
+
+    status = Status(payload[0])
+    if status == Status.OK:
+        return AppConfigResult(status=status, rejected=())
+
+    if len(payload) < 2:
+        raise UciPayloadError(
+            "payload de SESSION_SET_APP_CONFIG con Status de error "
+            "pero sin la cantidad de parametros rechazados"
+        )
+
+    count = payload[1]
+    expected_size = 2 + count * 2
+    if len(payload) < expected_size:
+        raise UciPayloadError(
+            f"payload de SESSION_SET_APP_CONFIG de {len(payload)} bytes, "
+            f"se esperaban {expected_size} para {count} parametros rechazados"
+        )
+
+    rejected = tuple(
+        RejectedAppConfigParam(param=payload[2 + 2 * i], status=Status(payload[3 + 2 * i]))
+        for i in range(count)
+    )
+    return AppConfigResult(status=status, rejected=rejected)
+
+
+@dataclass(frozen=True)
+class RangingDataNotification:
+    """Header de `RANGING_DATA_NTF` (GID=0x02, OID=0x00, `MT=NOTIFICATION`).
+
+    Layout confirmado contra `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/qorvo_msg.py`
+    (clase `RangingData.__init__`, release `QM33SDK-1.1.1`) y verificado
+    contra una captura real de hardware (ver docs/protocolo-uci.md): un solo
+    dispositivo sin par ya genera esta notificacion en cada ronda de ranging,
+    con `n_measurements=1` aunque no haya respuesta de otro dispositivo.
+
+    Las mediciones individuales (`n_measurements` registros al final del
+    payload, con un formato que depende de `measurement_type` -- TWR, OWR AoA,
+    etc.) **no se decodifican todavia**: quedan crudas en `measurements_raw`.
+    """
+
+    sequence_number: int
+    session_handle: int
+    ranging_interval_ms: int
+    measurement_type: RangingMeasType
+    mac_address_size_bytes: int
+    primary_session_id: int
+    n_measurements: int
+    measurements_raw: bytes
+
+
+def parse_ranging_data_notification(payload: bytes) -> RangingDataNotification:
+    """Decodifica el header de una notificacion `RANGING_DATA_NTF` (sin las mediciones)."""
+    if len(payload) < RANGING_DATA_NOTIFICATION_HEADER_SIZE:
+        raise UciPayloadError(
+            f"payload de RANGING_DATA_NTF de {len(payload)} bytes, "
+            f"se esperaban al menos {RANGING_DATA_NOTIFICATION_HEADER_SIZE} para el header"
+        )
+    return RangingDataNotification(
+        sequence_number=int.from_bytes(payload[0:4], "little"),
+        session_handle=int.from_bytes(payload[4:8], "little"),
+        # payload[8]: RFU
+        ranging_interval_ms=int.from_bytes(payload[9:13], "little"),
+        measurement_type=RangingMeasType(payload[13]),
+        # payload[14]: RFU
+        mac_address_size_bytes=2 if payload[15] == 0 else 8,
+        primary_session_id=int.from_bytes(payload[16:20], "little"),
+        # payload[20:24]: RFU
+        n_measurements=payload[24],
+        measurements_raw=bytes(payload[RANGING_DATA_NOTIFICATION_HEADER_SIZE:]),
     )
