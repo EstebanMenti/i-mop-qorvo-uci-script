@@ -19,6 +19,13 @@ dev = [
     "mypy>=1.10",
     "types-pyserial>=3.5",
 ]
+# Grupo opcional, no forzado en el uso normal (solo UCI/USB): necesario para
+# cli_bridge/ (ranging mixto UCI+CLI contra el puente BLE nRF52840, ver
+# docs/plan-implementacion.md). Misma libreria que usa i-mop-qorvo-CLI-script
+# para su propio transporte BLE.
+ble = [
+    "bleak>=0.22",
+]
 
 # [project.scripts] se declara en la fase F7 del plan de implementacion,
 # cuando exista src/dwm3001c_uci/app/cli.py con el objeto `app` de Typer.

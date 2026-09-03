@@ -25,7 +25,7 @@ La **calibración de retardo de antena** (objetivo 2 de la herramienta CLI herma
 
 - Una o dos placas **DWM3001CDK** conectadas por USB a la misma PC (Windows). Cada placa expone un puerto COM virtual (USB CDC ACM).
 - **Parámetros de puerto serie:** confirmados — **115200 8N1** (ver [docs/protocolo-uci.md §5](docs/protocolo-uci.md#5-transporte)). No es una suposición por analogía con el firmware CLI: se verificó contra la fuente del SDK y contra hardware real.
-- Dos placas permiten probar una sesión de ranging real entre un dispositivo `Controller`/`Initiator` y uno `Controlee`/`Responder` — **todavía no disponible en este proyecto** (solo se probó con una placa). **No usar** las placas del banco BLE (`UWB-Node-N`) del proyecto hermano `i-mop-qorvo-CLI-script` como segunda placa: corren firmware CLI de texto sobre un puente nRF52840 (protocolo NUS, no UCI), y su USB queda inaccesible mientras estén montadas en ese puente. Hace falta una placa DWM3001CDK adicional y dedicada, con firmware UCI y conexión USB directa — ver detalle en [docs/plan-implementacion.md, "Trabajo futuro"](docs/plan-implementacion.md#trabajo-futuro-fuera-de-este-plan).
+- Dos placas permiten probar una sesión de ranging real entre un dispositivo `Controller`/`Initiator` y uno `Controlee`/`Responder`. Las placas del banco BLE (`UWB-Node-N`) del proyecto hermano `i-mop-qorvo-CLI-script` corren firmware CLI de texto sobre un puente nRF52840 (protocolo NUS, no UCI) — no se les puede hablar UCI directamente, pero **sí se puede controlar cada lado con su propio protocolo y dejarlos rangear por aire** con parámetros FiRa alineados: ver `src/dwm3001c_uci/cli_bridge/` + `mixed_ranging.py` y [docs/ranging-mixto-cli-uci.md](docs/ranging-mixto-cli-uci.md). Probado contra hardware real: la plomería de control funciona de punta a punta, pero el ranging físico todavía no se logró (ver detalle en ese documento) — sigue pendiente una medición de distancia real exitosa.
 
 ### 1.3 Documentación de referencia (leerla antes de tocar la lógica del protocolo)
 
@@ -77,7 +77,7 @@ La **calibración de retardo de antena** (objetivo 2 de la herramienta CLI herma
 
 ### 2.4 Dependencias
 
-- Mínimas y justificadas. Runtime: `pyserial` (transporte). `typer`/`rich` están declaradas para la CLI (fase F7, todavía no implementada — ver `docs/plan-implementacion.md`). La suite de validación (`validation/`) se implementó con specs declaradas en Python puro (`CommandSpec`, dataclasses), no en YAML — no hizo falta `pyyaml`. Dev: `pytest`, `ruff`, `mypy`, `types-pyserial`.
+- Mínimas y justificadas. Runtime: `pyserial` (transporte). `typer`/`rich` están declaradas para la CLI (fase F7, todavía no implementada — ver `docs/plan-implementacion.md`). La suite de validación (`validation/`) se implementó con specs declaradas en Python puro (`CommandSpec`, dataclasses), no en YAML — no hizo falta `pyyaml`. Dev: `pytest`, `ruff`, `mypy`, `types-pyserial`. Extra opcional `ble` (`bleak`): solo para `cli_bridge/` (ranging mixto UCI+CLI vía BLE, ver [docs/ranging-mixto-cli-uci.md](docs/ranging-mixto-cli-uci.md)) — no es una dependencia del uso normal (UCI/USB).
 - No agregar dependencias nuevas sin justificarlo en el pull request.
 - **No copiar código fuente del SDK de Qorvo** (p. ej. la librería Python `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/` del release QM33SDK-1.1.1) hacia este repositorio. Esos archivos llevan la licencia propietaria `LicenseRef-QORVO-2` y **no está confirmado que permita redistribución o derivación** fuera del propio SDK. Usarla únicamente como **referencia de diseño** (para entender el framing y las tablas de GID/OID) y reimplementar de forma independiente en este proyecto. Ante cualquier duda de licenciamiento, consultar antes de portar código.
 
@@ -102,6 +102,7 @@ i-mop-qorvo-uci-script/
 │   ├── versionado.md          ← política de versionado y releases
 │   ├── resultados-validacion.md ← actas de campañas de validación contra hardware real
 │   ├── validaciones/          ← evidencia cruda (reportes fechados) de esas campañas
+│   ├── ranging-mixto-cli-uci.md ← herramienta experimental UCI+CLI por BLE, ver mas abajo
 │   └── referencias/           ← índice de documentos oficiales del fabricante
 ├── src/
 │   └── dwm3001c_uci/          ← paquete Python principal
@@ -109,14 +110,16 @@ i-mop-qorvo-uci-script/
 │       ├── uci/                ← framing UCI, enums (GID/OID/Status/...), codec TVS de AppConfig
 │       ├── core/               ← cliente UCI de alto nivel (comandos, correlación cmd↔resp, notificaciones, modelos de datos)
 │       ├── validation/         ← suite de validación declarativa + runner + reporte
-│       └── app/                ← puntos de entrada de línea de comandos (Typer) — **pendiente, fase F7**
+│       ├── app/                ← puntos de entrada de línea de comandos (Typer) — **pendiente, fase F7**
+│       ├── cli_bridge/         ← protocolo de texto sobre BLE (shell Zephyr/NUS) — NO es UCI, ver docs/ranging-mixto-cli-uci.md
+│       └── mixed_ranging.py    ← orquestador experimental: UciClient (local) + CliBridgeClient (remoto)
 └── tests/                     ← tests pytest (sin hardware por defecto)
 ```
 
 **Reglas de estructura:**
 
 - Layout `src/`: el paquete importable vive solo bajo `src/`. Prohibido poner módulos sueltos en la raíz.
-- Dependencias entre capas, en un solo sentido: `app → validation → core → uci → transport`. `transport` no conoce el protocolo UCI (solo mueve bytes); `uci` no conoce el transporte concreto ni Typer/Rich; `core` no conoce Typer/Rich. Detalle completo en [docs/arquitectura.md](docs/arquitectura.md).
+- Dependencias entre capas, en un solo sentido: `app → validation → core → uci → transport`. `transport` no conoce el protocolo UCI (solo mueve bytes); `uci` no conoce el transporte concreto ni Typer/Rich; `core` no conoce Typer/Rich. Detalle completo en [docs/arquitectura.md](docs/arquitectura.md). `cli_bridge/` y `mixed_ranging.py` **no forman parte de esta cadena**: son un subsistema aparte que habla un protocolo de texto no-UCI (ver [docs/ranging-mixto-cli-uci.md](docs/ranging-mixto-cli-uci.md)); `mixed_ranging.py` es el único módulo del proyecto que depende tanto de `core/`/`transport/` (UCI) como de `cli_bridge/` (CLI-sobre-BLE) al mismo tiempo, a propósito.
 - Los reportes generados en tiempo de ejecución van a `reports/` (ignorado por git) y los logs a `logs/` (ignorado por git).
 
 ---

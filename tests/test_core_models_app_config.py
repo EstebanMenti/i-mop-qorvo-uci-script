@@ -12,8 +12,10 @@ from dwm3001c_uci.core.models import (
     AppConfigResult,
     RangingDataNotification,
     RejectedAppConfigParam,
+    TwrMeasurement,
     parse_app_config_response,
     parse_ranging_data_notification,
+    parse_twr_measurement,
 )
 from dwm3001c_uci.uci.enums import RangingMeasType, Status
 
@@ -89,3 +91,26 @@ def test_parse_ranging_data_notification_sequence_increments_across_rounds() -> 
 def test_parse_ranging_data_notification_raises_on_short_payload() -> None:
     with pytest.raises(UciPayloadError):
         parse_ranging_data_notification(bytes(10))
+
+
+def test_parse_twr_measurement_from_real_capture_without_peer() -> None:
+    # Misma captura real que arriba: sin un segundo dispositivo respondiendo,
+    # el status es RANGING_RX_TIMEOUT y distance_cm=0xFFFF (valor centinela,
+    # no una distancia real).
+    notification = parse_ranging_data_notification(REAL_RANGING_DATA_PAYLOAD)
+
+    measurement = parse_twr_measurement(
+        notification.measurements_raw, notification.mac_address_size_bytes
+    )
+
+    assert measurement == TwrMeasurement(
+        mac_address="00:01",
+        status=Status.RANGING_RX_TIMEOUT,
+        is_nlos=True,
+        distance_cm=0xFFFF,
+    )
+
+
+def test_parse_twr_measurement_raises_on_short_payload() -> None:
+    with pytest.raises(UciPayloadError):
+        parse_twr_measurement(bytes(3), mac_address_size_bytes=2)

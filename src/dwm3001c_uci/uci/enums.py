@@ -178,6 +178,8 @@ class AppConfigParam(IntEnum):
     SFD_ID = 0x15
     SLOTS_PER_RR = 0x1B
     SCHEDULE_MODE = 0x22
+    VENDOR_ID = 0x27
+    STATIC_STS_IV = 0x28
 
 
 class DeviceType(IntEnum):
