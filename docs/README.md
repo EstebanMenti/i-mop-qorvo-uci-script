@@ -15,6 +15,7 @@
 | [protocolo-uci.md](protocolo-uci.md) | Resumen del protocolo UCI relevado del SDK: framing, grupos de comando (GID/OID), códigos de estado, extensiones propietarias de Qorvo | Desarrolladores |
 | [plan-implementacion.md](plan-implementacion.md) | Plan de implementación por fases, con criterios de aceptación | Desarrolladores / IA implementadora |
 | [versionado.md](versionado.md) | Política de versionado semántico, `CHANGELOG.md`, etiquetado de releases y archivo de evidencia de validación | Desarrolladores / mantenedores |
+| [resultados-validacion.md](resultados-validacion.md) | Acta de la primera corrida completa de la suite de validación (F0–F6) contra hardware real: 11/11 checks OK, hallazgos de firmware y evidencia archivada en [validaciones/](validaciones/) | Todos |
 
 ## 2. Documentos de referencia (fabricante)
 

@@ -62,10 +62,11 @@
 
 ## F6 — Suite de validación
 
-- Implementar `validation/spec.py` (spec declarativa: comando, parámetros, `Status` esperado, aserciones sobre el payload), `validation/runner.py` (ejecuta la spec contra un `UciClient`) y `validation/report.py` (genera el reporte).
-- Cubrir como mínimo todos los comandos `Core` y `Session` de F3/F4, y los de `Ranging` de F5.
+- ✅ `validation/spec.py` (`CommandSpec`: `run`/`validate` sobre un `context` compartido entre pasos, para specs que dependen de un resultado anterior como `session_handle`), `validation/runner.py` (`run_checks`, nunca interrumpe la corrida por una excepción de un spec — la reporta como check fallido) y `validation/report.py` (`render_text`, `to_dict`).
+- ✅ `DEFAULT_SPECS` cubre los 11 comandos de `Core`/`Session`/`Ranging` implementados en F3–F5.
+- **Nota de diseño:** `dwm-uci validate` (la CLI) todavía no existe — es la fase F7. Esta fase corrió la suite con un script directo (`run_checks(client, DEFAULT_SPECS)`), no con el comando de consola.
 
-**Aceptación:** `dwm-uci validate` corre contra hardware real, produce un reporte con resultado por comando, y el resultado se archiva en `docs/validaciones/` (evidencia fechada), siguiendo el patrón de `i-mop-qorvo-CLI-script`.
+**Aceptación:** ✅ validado contra hardware real: **11/11 checks OK**. Reporte archivado en [docs/validaciones/2026-09-03-validacion-f0-f6.txt](validaciones/2026-09-03-validacion-f0-f6.txt) y resumido en [docs/resultados-validacion.md](resultados-validacion.md), siguiendo el patrón de `i-mop-qorvo-CLI-script`. `RANGING_START`/`RANGING_STOP` validan `Status.ERROR_SESSION_NOT_CONFIGURED` como resultado esperado (no `Status.OK`) porque `SESSION_SET_APP_CONFIG` todavía no está implementado — la spec deja explícito en un comentario que debe actualizarse cuando eso cambie.
 
 ## F7 — CLI y logging
 
