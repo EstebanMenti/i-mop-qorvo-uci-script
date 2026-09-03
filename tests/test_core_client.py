@@ -165,3 +165,58 @@ def test_session_deinit_sends_expected_command_and_captures_notification() -> No
     assert status == Status.OK
     assert len(client.notifications) == 1
     assert client.notifications[0].payload == bytes.fromhex("01 00 00 00 01 00")
+
+
+# Grupo Ranging: TX/RX reales contra una sesion creada pero NUNCA configurada
+# con SESSION_SET_APP_CONFIG (ese comando todavia no esta implementado, ver
+# docs/plan-implementacion.md F4). Por eso RANGING_START/STOP devuelven
+# Status.ERROR_SESSION_NOT_CONFIGURED en vez de arrancar un ranging real: es
+# el resultado esperado y confirmado, no un caso de error inventado.
+REAL_RANGING_GET_COUNT_TX = bytes.fromhex("22 03 00 04 01 00 00 00")
+REAL_RANGING_GET_COUNT_RX = bytes.fromhex("42 03 00 05 00 00 00 00 00")
+REAL_RANGING_START_TX = bytes.fromhex("22 00 00 04 01 00 00 00")
+REAL_RANGING_START_RX = bytes.fromhex("42 00 00 01 15")
+REAL_RANGING_STOP_TX = bytes.fromhex("22 01 00 04 01 00 00 00")
+REAL_RANGING_STOP_RX = bytes.fromhex("42 01 00 01 15")
+
+
+def test_get_ranging_count_returns_status_and_count_on_success() -> None:
+    transport = FakeTransport(rx_data=REAL_RANGING_GET_COUNT_RX)
+    client = UciClient(transport)
+
+    status, count = client.get_ranging_count(session_handle=1)
+
+    assert transport.tx_log == [REAL_RANGING_GET_COUNT_TX]
+    assert status == Status.OK
+    assert count == 0
+
+
+def test_get_ranging_count_returns_none_when_status_is_not_ok() -> None:
+    # Response sintetica: Status distinto de OK no trae los 4 bytes de conteo.
+    transport = FakeTransport(rx_data=bytes.fromhex("42 03 00 01 15"))
+    client = UciClient(transport)
+
+    status, count = client.get_ranging_count(session_handle=1)
+
+    assert status == Status.ERROR_SESSION_NOT_CONFIGURED
+    assert count is None
+
+
+def test_ranging_start_on_unconfigured_session_returns_real_error_status() -> None:
+    transport = FakeTransport(rx_data=REAL_RANGING_START_RX)
+    client = UciClient(transport)
+
+    status = client.ranging_start(session_handle=1)
+
+    assert transport.tx_log == [REAL_RANGING_START_TX]
+    assert status == Status.ERROR_SESSION_NOT_CONFIGURED
+
+
+def test_ranging_stop_sends_expected_command() -> None:
+    transport = FakeTransport(rx_data=REAL_RANGING_STOP_RX)
+    client = UciClient(transport)
+
+    status = client.ranging_stop(session_handle=1)
+
+    assert transport.tx_log == [REAL_RANGING_STOP_TX]
+    assert status == Status.ERROR_SESSION_NOT_CONFIGURED

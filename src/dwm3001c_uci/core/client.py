@@ -18,7 +18,15 @@ from dwm3001c_uci.core.models import (
     parse_session_init_result,
 )
 from dwm3001c_uci.transport.serial_link import Transport
-from dwm3001c_uci.uci.enums import Gid, MessageType, OidCore, OidSession, SessionType, Status
+from dwm3001c_uci.uci.enums import (
+    Gid,
+    MessageType,
+    OidCore,
+    OidRanging,
+    OidSession,
+    SessionType,
+    Status,
+)
 from dwm3001c_uci.uci.framing import StreamDecoder, UciMessage, encode_packet, split_into_packets
 
 DEFAULT_TIMEOUT_S = 2.0
@@ -132,3 +140,35 @@ class UciClient:
         """Envia `SESSION_GET_COUNT`. Devuelve `(Status, cantidad_de_sesiones)`."""
         message = self._send_command_and_wait_response(Gid.SESSION, OidSession.GET_COUNT, b"")
         return Status(message.payload[0]), message.payload[1]
+
+    def ranging_start(self, session_handle: int) -> Status:
+        """Envia `RANGING_START`. Payload: session_handle (4 bytes LE).
+
+        No decodifica notificaciones de datos de ranging (`RANGING_DATA_NTF`,
+        mismo GID/OID que este comando pero `MT=NOTIFICATION`): no se pudo
+        validar su formato contra hardware real con un solo dispositivo
+        conectado (se necesitan dos placas en una sesion Controller/Controlee
+        real). Quedan en `UciClient.notifications` sin parsear.
+        """
+        payload = session_handle.to_bytes(4, "little")
+        message = self._send_command_and_wait_response(Gid.RANGING, OidRanging.START, payload)
+        return Status(message.payload[0])
+
+    def ranging_stop(self, session_handle: int) -> Status:
+        """Envia `RANGING_STOP`. Payload: session_handle (4 bytes LE)."""
+        payload = session_handle.to_bytes(4, "little")
+        message = self._send_command_and_wait_response(Gid.RANGING, OidRanging.STOP, payload)
+        return Status(message.payload[0])
+
+    def get_ranging_count(self, session_handle: int) -> tuple[Status, int | None]:
+        """Envia `RANGING_GET_COUNT`. Payload: session_handle (4 bytes LE).
+
+        Devuelve `(Status, None)` si `Status != OK`: el conteo de 4 bytes solo
+        esta presente en una Response exitosa (confirmado contra `fira.py` del
+        SDK, funcion `get_ranging_count`).
+        """
+        payload = session_handle.to_bytes(4, "little")
+        message = self._send_command_and_wait_response(Gid.RANGING, OidRanging.GET_COUNT, payload)
+        status = Status(message.payload[0])
+        count = int.from_bytes(message.payload[1:5], "little") if status == Status.OK else None
+        return status, count
