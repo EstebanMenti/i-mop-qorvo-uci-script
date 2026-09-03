@@ -223,3 +223,57 @@ def parse_ranging_data_notification(payload: bytes) -> RangingDataNotification:
         n_measurements=payload[24],
         measurements_raw=bytes(payload[RANGING_DATA_NOTIFICATION_HEADER_SIZE:]),
     )
+
+
+TWR_MEASUREMENT_PREFIX_FIELDS_SIZE = 4
+"""status (1) + is_nlos (1) + distance_cm (2), sin contar la MAC (tamano variable)."""
+
+
+@dataclass(frozen=True)
+class TwrMeasurement:
+    """Prefijo confirmado de una medicion TWR dentro de `RANGING_DATA_NTF`.
+
+    Layout confirmado contra `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/qorvo_msg.py`
+    (clase `RangingTwrData.__init__`, release `QM33SDK-1.1.1`): MAC (tamano
+    variable, `mac_address_size_bytes` de `RangingDataNotification`) + status
+    (1 byte) + `is_nlos` (1 byte) + `distance_cm` (2 bytes LE). Los campos de
+    AoA que siguen (`aoa_tetha`, `aoa_phi`, ...) **no se decodifican** -- no
+    hacen falta para confirmar que se completo un ranging real, y su formato
+    de punto fijo no esta confirmado contra hardware.
+    """
+
+    mac_address: str
+    status: Status
+    is_nlos: bool
+    distance_cm: int
+
+
+def parse_twr_measurement(measurements_raw: bytes, mac_address_size_bytes: int) -> TwrMeasurement:
+    """Decodifica la primera medicion TWR de `measurements_raw` (mac/status/nlos/distancia).
+
+    Solo decodifica una medicion (la primera): no se conoce el ancho total de
+    un registro TWR completo (los campos de AoA que siguen a `distance_cm` no
+    estan confirmados), asi que no se puede calcular el offset de una segunda
+    medicion en sesiones con `n_measurements > 1`. Alcanza para el caso de uso
+    actual (sesion unicast, una medicion por notificacion).
+    """
+    prefix_size = mac_address_size_bytes + TWR_MEASUREMENT_PREFIX_FIELDS_SIZE
+    if len(measurements_raw) < prefix_size:
+        raise UciPayloadError(
+            f"measurements_raw de {len(measurements_raw)} bytes, se esperaban "
+            f"al menos {prefix_size} para decodificar una medicion TWR"
+        )
+
+    mac_address = bytes(reversed(measurements_raw[:mac_address_size_bytes])).hex(":")
+    status_offset = mac_address_size_bytes
+    nlos_offset = status_offset + 1
+    distance_offset = nlos_offset + 1
+
+    return TwrMeasurement(
+        mac_address=mac_address,
+        status=Status(measurements_raw[status_offset]),
+        is_nlos=bool(measurements_raw[nlos_offset]),
+        distance_cm=int.from_bytes(
+            measurements_raw[distance_offset : distance_offset + 2], "little"
+        ),
+    )

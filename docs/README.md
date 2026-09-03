@@ -17,6 +17,7 @@
 | [plan-implementacion.md](plan-implementacion.md) | Plan de implementación por fases, con criterios de aceptación | Desarrolladores / IA implementadora |
 | [versionado.md](versionado.md) | Política de versionado semántico, `CHANGELOG.md`, etiquetado de releases y archivo de evidencia de validación | Desarrolladores / mantenedores |
 | [resultados-validacion.md](resultados-validacion.md) | Acta de la primera corrida completa de la suite de validación (F0–F6) contra hardware real: 11/11 checks OK, hallazgos de firmware y evidencia archivada en [validaciones/](validaciones/) | Todos |
+| [ranging-mixto-cli-uci.md](ranging-mixto-cli-uci.md) | Herramienta experimental para intentar ranging real entre una placa UCI (local, USB) y una placa CLI (remota, BLE vía el puente nRF52840): arquitectura de `cli_bridge/`, uso, y resultado real (conectividad OK, ranging físico todavía sin éxito) | Desarrolladores |
 
 ## 2. Documentos de referencia (fabricante)
 

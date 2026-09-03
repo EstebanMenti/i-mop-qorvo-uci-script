@@ -141,6 +141,8 @@ class UciClient:
         slot_duration_us: int = 2400,
         ranging_interval_ms: int = 200,
         slots_per_rr: int = 25,
+        vendor_id: int = 0x0708,
+        static_sts_iv: int = 0x060504030201,
     ) -> AppConfigResult:
         """Envia `SESSION_SET_APP_CONFIG` con un conjunto minimo de parametros.
 
@@ -161,15 +163,23 @@ class UciClient:
           necesarios ademas de los 5 "mandatory": con solo esos 5, el
           firmware acepta cada parametro pero `RANGING_START` sigue
           devolviendo `Status.ERROR_SESSION_NOT_CONFIGURED`.
+        - `vendor_id`/`static_sts_iv`: clave STS estatica. Los valores por
+          defecto (`0x0708`/`0x060504030201`) son los mismos "hardcoded" que
+          usa `run_fira_twr.py` del SDK **y** los que muestra por defecto el
+          firmware CLI de texto (`INITF`/`RESPF` sin opciones, confirmado
+          contra `i-mop-qorvo-CLI-script/docs/referencia-comandos-fw110.md`:
+          `VENDOR_ID: "07:08"`, `STATIC_STS_IV: "01:02:03:04:05:06"`). Para
+          que dos dispositivos completen un ranging real en modo STS estatico
+          (`sts_config=0`), **ambos necesitan la misma clave** — dejar el
+          default acá facilita interoperar con una placa CLI sin tener que
+          pasarlo a mano.
 
         No soporta el resto de los parametros de `App.defs` (STS
         provisionado/con clave, diagnosticos Qorvo, DL-TDoA, ...).
 
         Validado contra hardware real con una sola placa: el firmware acepta
-        este conjunto sin rechazar ningun parametro. **No se validó** todavía
-        que alcance para completar un ciclo de ranging exitoso con medición
-        de distancia — eso requiere una segunda placa. Ver
-        docs/plan-implementacion.md.
+        este conjunto sin rechazar ningun parametro, y permite completar
+        rondas de ranging (ver `ranging_start`). Ver docs/plan-implementacion.md.
         """
         params: list[tuple[int, int | Sequence[int]]] = [
             (AppConfigParam.DEVICE_TYPE, int(device_type)),
@@ -187,6 +197,8 @@ class UciClient:
             (AppConfigParam.SLOT_DURATION, slot_duration_us),
             (AppConfigParam.RANGING_INTERVAL, ranging_interval_ms),
             (AppConfigParam.SLOTS_PER_RR, slots_per_rr),
+            (AppConfigParam.VENDOR_ID, vendor_id),
+            (AppConfigParam.STATIC_STS_IV, static_sts_iv),
         ]
         payload = session_handle.to_bytes(4, "little") + encode_app_config(params)
         message = self._send_command_and_wait_response(

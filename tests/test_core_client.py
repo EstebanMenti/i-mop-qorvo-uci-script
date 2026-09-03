@@ -228,14 +228,16 @@ def test_ranging_stop_sends_expected_command() -> None:
     assert status == Status.ERROR_SESSION_NOT_CONFIGURED
 
 
-# SESSION_SET_APP_CONFIG con el conjunto minimo de parametros, y RANGING_START
-# ya con la sesion configurada: capturas reales contra hardware, session_handle=1.
-# A diferencia de los fixtures de arriba (sesion nunca configurada), aca
-# RANGING_START devuelve Status.OK y el firmware emite RANGING_DATA_NTF real.
+# SESSION_SET_APP_CONFIG con el conjunto minimo de parametros (17, incluidos
+# VENDOR_ID/STATIC_STS_IV para interoperar con la clave STS por defecto del
+# firmware CLI), y RANGING_START ya con la sesion configurada: capturas
+# reales contra hardware, session_handle=1. A diferencia de los fixtures de
+# arriba (sesion nunca configurada), aca RANGING_START devuelve Status.OK y
+# el firmware emite RANGING_DATA_NTF real.
 REAL_SET_APP_CONFIG_TX = bytes.fromhex(
-    "21 03 00 38 01 00 00 00 0f 00 01 01 11 01 01 03 01 00 01 01 02 06 02 00 00 "
+    "21 03 00 44 01 00 00 00 11 00 01 01 11 01 01 03 01 00 01 01 02 06 02 00 00 "
     "07 02 01 00 04 01 09 02 01 00 12 01 03 22 01 01 14 01 0a 15 01 02 08 02 60 "
-    "09 09 04 c8 00 00 00 1b 01 19"
+    "09 09 04 c8 00 00 00 1b 01 19 27 02 08 07 28 06 01 02 03 04 05 06"
 )
 REAL_SET_APP_CONFIG_RX = bytes.fromhex("41 03 00 02 00 00 61 02 00 06 01 00 00 00 03 00")
 
