@@ -1,7 +1,7 @@
 # Ranging mixto: placa UCI (local, USB) + placa CLI (remota, BLE)
 
-> **Propósito:** documentar la herramienta experimental que intenta un ranging real entre una placa local con firmware UCI (nuestro `UciClient`, por USB) y una placa remota con firmware CLI de texto, controlada por Bluetooth a través del puente `I-mop-nrf52840-fw`.
-> **Alcance:** arquitectura de `cli_bridge/` y `mixed_ranging.py`, cómo usarlos, y el resultado real de la primera corrida contra hardware (positivo en conectividad/protocolo, sin éxito todavía en la medición física de distancia).
+> **Propósito:** documentar la herramienta que hace un ranging real entre una placa local con firmware UCI (nuestro `UciClient`, por USB) y una placa remota con firmware CLI de texto, controlada por Bluetooth a través del puente `I-mop-nrf52840-fw`.
+> **Alcance:** arquitectura de `cli_bridge/` y `mixed_ranging.py`, cómo usarlos, y el resultado real contra hardware. **Ranging físico real logrado** (sexta corrida, ver §4): el hallazgo faltante era que `RESPF -ID` (lado CLI) debe coincidir con el `session_id` de la sesión UCI (lado local) — no estaba documentado en ninguna fuente oficial de Qorvo relevada hasta ahora, y se confirmó comparando contra un proyecto hermano independiente (`uwb-qorvo-tools`) que ya tenía esta misma mezcla CLI+UCI funcionando.
 
 ---
 
@@ -85,37 +85,36 @@ Ambos lados se configuraron con los **mismos valores por defecto** que usa el SD
 | **`STATIC_STS_IV`** | `01:02:03:04:05:06` | idem — clave STS estática compartida, necesaria para que dos dispositivos en modo STS estático (`STS_CONFIG=0`) se "escuchen" |
 | **`STS_LENGTH`** | `1` (64 símbolos) | Confirmado contra Tabla 7.7 del Developer Manual ("BPRF mode operating parameter sets"): el perfil `PRFSET=BPRF4` (default de la CLI) usa `STS Segment Length = 64` símbolos. Agregado en la segunda iteración — antes no se fijaba en absoluto del lado UCI |
 | Direcciones MAC | Local `0x0000` (Controller/Initiator), remota `0x0001` (Controlee/Responder) | Coincide con los defaults de `RESPF` (`ADDR=1, PADDR=0`) |
+| **`session_id` / `RESPF -ID`** | El mismo valor en ambos lados | **Imprescindible, no un default compartido:** a diferencia de todo lo anterior, esto no coincide "por default" (el default de la CLI es `ID=42`, el de este cliente era `session_id=1`) — hay que pasarlo explícitamente igual en `session_init()` (UCI) y en `RESPF -ID=` (CLI). No documentado en ninguna fuente oficial de Qorvo relevada; confirmado necesario comparando contra `uwb-qorvo-tools` (ver §4, corrida 6) y validado: sin esto, `RANGING_RX_TIMEOUT` en el 100% de las rondas; con esto, ranging real. |
+| `NUMBER_OF_CONTROLEES` | `1` | Presente en la config validada de `uwb-qorvo-tools` (ausente en `run_fira_twr.py`); agregado por paridad al confirmar la causa raíz de arriba, no confirmado como necesario por sí solo |
 
-## 4. Resultado contra hardware real (cuatro corridas)
+## 4. Resultado contra hardware real (seis corridas — ranging logrado en la sexta)
 
-**Fecha:** 2026-09-03. **Placas:** local en `COM29` (firmware UCI), remota `UWB-Node-2` (DWM3001CDK detrás de un puente nRF52840, firmware CLI `1.1.0`, build `Aug 10 2026`). **Confirmado por el usuario:** ambas placas están físicamente cerca y sin obstáculos — se descarta distancia/obstrucción como causa.
+**Fecha:** 2026-09-03. **Placas:** local en `COM29` (firmware UCI), remota `UWB-Node-2` (DWM3001CDK detrás de un puente nRF52840, firmware CLI `1.1.0`, build `Aug 10 2026`, `UWB stack: R12.7.0-405-gb33c5c4272`). **Confirmado por el usuario:** ambas placas están físicamente cerca y sin obstáculos.
 
-**✅ Positivo, estable en las cuatro corridas — toda la plomería funciona de punta a punta:**
+**✅ Ranging físico real logrado (corrida 6):** `mixed_ranging.py` contra `COM29` + `UWB-Node-2`, dos corridas de 8s consecutivas: **23/45 y 17/45 rondas con `status=OK`**, distancias entre 0cm y 67cm (consistente con placas muy cercanas). El resto de las rondas fallidas en esa misma corrida no fueron timeout sino `RANGING_NEGATIVE_DISTANCE` (0x1B) — un resultado FiRa normal a muy corta distancia (el cálculo de tiempo de vuelo da un valor levemente negativo por ruido de reloj/medición cuando la distancia real es cercana a 0), no un síntoma de mala configuración.
 
-- Escaneo y conexión BLE al puente (`UWB-Node-2`, dirección `FE:79:A2:F3:52:B9`).
-- `qorvo on` encendió el Qorvo remoto; `qorvo STAT` devolvió el JSON de estado real.
-- `qorvo RESPF -CHAN=<N> -PCODE=10 -RRU=DSTWR -ADDR=1 -PADDR=0` arrancó el responder remoto y devolvió el volcado completo de parámetros FiRa — coincidiendo campo a campo con lo esperado (`STATIC_STS_IV: "01:02:03:04:05:06"`, `VENDOR_ID: "07:08"`, etc.), en canal 9 y en canal 5.
-- El lado local completó `SESSION_INIT` → `SESSION_SET_APP_CONFIG` (`Status.OK`, sin parámetros rechazados) → `RANGING_START` (`Status.OK`, sesión pasó a `ACTIVE`).
+**Causa raíz encontrada:** el `session_id` de la sesión UCI local (pasado a `session_init`) nunca se estaba pasando también al lado CLI remoto vía `RESPF -ID=`. `mixed_ranging.py` usaba `session_id=1` para el iniciador local, pero `bridge.respf(...)` no incluía `ID`, así que el responder remoto quedaba con el default de la CLI (`ID=42`, visible en el volcado de parámetros de las cinco corridas anteriores: `SESSION_ID: 42`). **Este desalineamiento no está documentado en ninguna fuente oficial de Qorvo relevada** (ni el Developer Manual, ni la especificación `uwb-uci-messages-api`, ni `run_fira_twr.py`) — se descubrió comparando contra un proyecto hermano independiente, `uwb-qorvo-tools` (Raspberry Pi + un Qorvo local en modo UCI + Qorvo remotos por BLE/CLI, con esta misma arquitectura ya funcionando con ranging real medido). Ese proyecto documenta explícitamente (`ble_integration.md`) que los parámetros "session-wide" que se empujan a cada responder deben mantenerse "consistent with the initiator's UCI app config (session id, channel, block/round timing, initiator address)", y su código (`ble_session.py::respf_command`) arma `RESPF -ID={sid}` con el mismo id que usa `session_init` del lado UCI.
 
-**❌ No logrado, en las cuatro corridas — el ranging físico real:** ambos lados reportan timeout en cada ronda (remoto: `SESSION_INFO_NTF` con `status="RX_TIMEOUT"`; local: `TwrMeasurement` con `status=RANGING_RX_TIMEOUT`). Ninguna ronda devolvió una distancia real.
+El fix fue trivial una vez identificado: `mixed_ranging.py` ahora pasa `ID=session_id` a `bridge.respf(...)`, igual que ya pasaba con `session_id` a `uci.session_init(...)`.
 
-**Bitácora de las cuatro corridas:**
+**Bitácora completa:**
 
 1. **Corrida 1** (parámetros mínimos + clave STS, canal 9): timeout en ambos lados. El lado local solo mostraba 3 rondas en 8s — resultó ser un bug propio (ver recuadro en §2.3), no una señal real del hardware.
-2. **Corrida 2** (+ `STS_LENGTH=1`, tras leer la Tabla 7.7 del Developer Manual): mismo resultado. Se descarta `STS_LENGTH` desalineado como causa única — el resto de los campos de esa tabla para `BPRF4` (`SYNC PSR=64`, `SFD#=2`, `SFD Length=8`, `STS nr of Segments=1`) ya coincidían o son defaults estándar compartidos.
-3. **Diagnóstico con `LISTENER`/`LSTAT`:** se puso el Qorvo remoto en modo sniffer (`qorvo LISTENER`) para ver si recibía **algo** por aire. **Hallazgo:** recibía tramas UWB constantes en canal 9 (una cada ~200-300 ms, `rsl`/`fsl` entre -70 y -85 dBm, contenido repetitivo) **antes incluso de que el lado local empezara a rangear** — hay tráfico ajeno real en ese canal, casi seguro de otras placas de la misma flota (`UWB-Node-1..9`) rangeando en simultáneo.
-4. **Corrida 3** (canal 5 en vez de 9, para evitar la interferencia detectada): mismo resultado — timeout en ambos lados. La interferencia en canal 9 es real pero **no es la causa** de este problema puntual (o no la única).
-5. **Corrida 4** (con el bug de `poll_notifications` corregido — ver §2.3): la corrida de 8s ahora sí mostró las ~45 rondas reales (antes solo 3), confirmando que el fix de observación funciona. **Pero las 45 rondas reales fueron igual de `RANGING_RX_TIMEOUT` que antes** — no era un problema de que "no veíamos" las rondas exitosas: genuinamente no hay ninguna.
+2. **Corrida 2** (+ `STS_LENGTH=1`, tras leer la Tabla 7.7 del Developer Manual): mismo resultado. Se descarta `STS_LENGTH` desalineado como causa única.
+3. **Diagnóstico con `LISTENER`/`LSTAT`:** se confirmó tráfico UWB ajeno constante en canal 9 (casi seguro de otras placas de la misma flota `UWB-Node-1..9`).
+4. **Corrida 3** (canal 5 en vez de 9): mismo resultado — se descarta la interferencia de canal como causa única.
+5. **Corrida 4** (con el bug de `poll_notifications` corregido — ver §2.3): confirmó ~45 rondas reales por corrida (antes solo se observaban 3 por un bug de observación propio), pero las 45 seguían siendo `RANGING_RX_TIMEOUT`.
+6. **Corrida 5** (paridad completa de `SESSION_SET_APP_CONFIG` con `run_fira_twr.py` del SDK — 7 parámetros nuevos: `AOA_RESULT_REQ`, `RESULT_REPORT_CONFIG`, `UWB_INITIATION_TIME`, `HOPPING_MODE`, `BLOCK_STRIDE_LENGTH`, `RSSI_REPORTING`, `MAX_NUMBER_OF_MEASUREMENTS`): el firmware aceptó los 25 parámetros sin rechazar ninguno, pero el resultado fue idéntico — timeout en cada ronda. Descartó definitivamente "falta un parámetro de `SESSION_SET_APP_CONFIG`" documentado en la spec oficial o en el script de referencia de Qorvo.
+7. **Corrida 6 (éxito):** tras revisar `uwb-qorvo-tools` y encontrar la discrepancia de `session_id`/`RESPF -ID`, se agregó `ID=session_id` a `bridge.respf(...)` y `NUMBER_OF_CONTROLEES` (otro parámetro presente en la config de ese proyecto hermano, ausente en la nuestra) a `session_set_app_config()`. **Ranging real confirmado**, dos corridas consecutivas.
 
-**Conclusión hasta ahora:** se descartaron, con evidencia contra hardware real, distancia física, `STS_LENGTH`, interferencia de canal (al menos como causa única) y un bug real de observación del lado del cliente (ya corregido, mejora quede). El resto de los parámetros documentados (canal, preámbulo, RRU, timing, clave STS completa) coinciden byte a byte entre ambos lados. **La causa de fondo sigue sin identificarse.**
+**Nota para reproducir:** si se vuelve a probar con canal 9 (compartido con la flota), es normal ver rondas `RANGING_RX_TIMEOUT` u otras entremezcladas con las `OK` por la interferencia real documentada en el punto 3 — lo relevante es que ahora **aparecen rondas `OK` con distancia**, cosa que nunca pasaba antes del fix.
 
-**Hipótesis restantes para una próxima iteración:**
+## 5. Próximos pasos
 
-1. Parámetros PHY más finos del perfil `BPRF4` no cubiertos por el subconjunto de `App.defs` que implementa este proyecto (tasa de datos PSDU, duración de preámbulo, tasa de PHR, modo PRF explícito) — requeriría relevar `uwb-l1-configuration-*.pdf`/`uwb-fira-protocol-*.pdf` del SDK para confirmar si son configurables por `SESSION_SET_APP_CONFIG` o quedan fijos por el perfil PRF a nivel de driver, y si el UCI firmware realmente iguala el perfil `BPRF4` de la CLI con los campos que sí controlamos.
-2. `UWB_INITIATION_TIME`/otros parámetros de sincronización fina no controlados explícitamente por ninguno de los dos lados.
-3. Alguna diferencia de comportamiento entre el motor FiRa tal como lo maneja el firmware CLI (vía "helpers API", llamada local) y el motor tal como lo maneja el firmware UCI (vía protocolo binario) que no sea puramente de configuración — es decir, que la premisa "ambos usan la misma uwb-stack, solo cambia la interfaz de control" (confirmada arquitectónicamente en el Developer Manual, ver `docs/plan-implementacion.md`) tenga alguna excepción no documentada.
-4. Interferencia de canal como factor agravante (no descartada del todo, solo como causa única) — repetir con la flota de otras placas apagada, si es posible coordinarlo.
+- Confirmar visualmente/con cinta métrica que las distancias reportadas (0-67cm en las corridas de prueba) coinciden con la separación física real entre placas — todavía no se hizo una medición de referencia controlada, solo se confirmó que el mecanismo funciona.
+- Si se necesita más de un responder remoto simultáneo, `uwb-qorvo-tools` documenta (validado contra hardware) que el modo *one-to-many* de esta firmware **no funciona** contra responders CLI (`RangingRxTimeout` en el 100% de las mediciones, y `RESPF -MULTI` es rechazado por el firmware CLI) — la estrategia que sí funciona es una sesión UCI unicast por cada responder (`session_id`, `session_id+1`, ...), cada una con su propio `RESPF -ID` remoto coincidente.
 
-## 5. Qué no se automatizó (tests)
+## 6. Qué no se automatizó (tests)
 
 `tests/test_cli_bridge.py` cubre `CliBridgeClient` (construcción de comandos, manejo de errores) y el regex de detección de prompt, con un transporte falso — no requieren hardware ni una conexión BLE real. `mixed_ranging.py` no tiene test automatizado: orquesta dos transportes reales (USB + BLE) y su valor está en la corrida contra hardware real documentada en §4, no en una simulación.

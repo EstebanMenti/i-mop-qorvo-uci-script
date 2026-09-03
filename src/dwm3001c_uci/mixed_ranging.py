@@ -54,6 +54,22 @@ def run_mixed_ranging(
 ) -> int:
     """Arma Controller(UCI, local)/Responder(CLI, remota) y cuenta rondas exitosas.
 
+    `session_id` se pasa **tanto** a `session_init` (lado UCI) **como** a
+    `RESPF -ID=` (lado CLI, remoto): deben coincidir. Confirmado contra un
+    proyecto hermano independiente (`uwb-qorvo-tools`, Raspberry Pi + un
+    Qorvo local en modo UCI + Qorvo remotos por BLE/CLI, con ranging real
+    medido con éxito) que arma exactamente esta misma mezcla CLI+UCI y
+    documenta explícitamente que `RESPF -ID` debe reflejar el mismo
+    `session_id`/`session_handle` que usa la sesión UCI del iniciador
+    (`ble_integration.md`: "keep consistent with the initiator's UCI app
+    config (session id, ...)"; `ble_session.py::respf_command` arma
+    `-ID={sid}` con el mismo id que `session_init`). Este proyecto no lo
+    hacía — el remoto quedaba con el default de la CLI (`ID=42`) mientras el
+    lado UCI usaba `session_id=1` — lo cual, según esa misma referencia, es
+    consistente con por qué las cinco corridas anteriores fallaron con
+    `RANGING_RX_TIMEOUT` en cada ronda (ver `docs/ranging-mixto-cli-uci.md`
+    §4).
+
     Devuelve la cantidad de rondas con `TwrMeasurement.status == Status.OK`
     (medicion real de distancia) observadas del lado UCI durante `duration_s`.
     """
@@ -82,6 +98,7 @@ def run_mixed_ranging(
                 CHAN=channel,
                 PCODE=preamble_code_index,
                 RRU="DSTWR",
+                ID=session_id,
                 ADDR=REMOTE_DEVICE_MAC_ADDRESS,
                 PADDR=LOCAL_DEVICE_MAC_ADDRESS,
             )
