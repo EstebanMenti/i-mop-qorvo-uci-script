@@ -32,7 +32,11 @@ Bytes 4..: payload
 | `GID` (Group ID) | 4 bits | Grupo de comando — ver [§2](#2-grupos-de-comando-gid-y-opcodes-oid) |
 | `OID` (Opcode ID) | 1 byte | Comando dentro del grupo |
 
-> **Nota — reensamblado:** cuando `PBF = 1`, el mensaje lógico continúa en el/los paquete(s) siguiente(s) con el mismo `GID`/`OID`; el consumidor debe reensamblar antes de decodificar el payload. El tamaño exacto de payload por paquete antes de fragmentar **`[Sin confirmar]`** — verificar el valor exacto contra la especificación de mensajes UCI antes de fijarlo como constante en el código.
+> **Nota — reensamblado:** cuando `PBF = 1`, el mensaje lógico continúa en el/los paquete(s) siguiente(s) con el mismo `GID`/`OID`; el consumidor debe reensamblar antes de decodificar el payload. El tamaño máximo de payload por paquete para `MT != Data Packet` es **255 bytes** — se deriva directamente de que el campo de longitud (byte 3) es de 1 byte, no es un valor arbitrario de implementación. Implementado en `src/dwm3001c_uci/uci/framing.py` (`MAX_PAYLOAD_SIZE`).
+>
+> **Nota — valores de `MT` adicionales, fuera de alcance actual:** al leer `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/addin_transport_uart.py` (parser de framing del lado host, funciones `check_data`/`data_received`) se confirmó que el campo `MT` de 3 bits admite, ademas de los 4 valores documentados arriba, los valores `0b100` y `0b101` ("Control message format for testing"), que **usan longitud de 16 bits** (bytes 2-3, little-endian) igual que un Data Packet, no el byte de longitud de 1 byte de un Command/Response/Notification normal. No se conoce el nombre oficial de estos dos tipos ni su relación exacta con el grupo `Test` (`GID=0x0D`) — **`[Sin confirmar]`**. El codec de `src/dwm3001c_uci/uci/framing.py` todavía **no los soporta** (el `MessageType` enum solo define 0-3); esto es aceptable mientras el grupo `Test` no esté en el alcance de implementación (no forma parte de ninguna fase de [plan-implementacion.md](plan-implementacion.md)), pero debe resolverse antes de implementar `OidTest`.
+>
+> El mismo archivo también revela una técnica de sincronización usada por la herramienta de Qorvo al abrir un puerto que puede tener bytes a medio recibir: descarta bytes iniciales hasta encontrar un nibble superior de byte 0 en `{4, 5, 6, 7}` (inicio válido de Response/Notification). El cliente UCI de este proyecto (`core/`, fase F3) debería considerar una estrategia equivalente al abrir el puerto por primera vez, en vez de asumir que el primer byte leído es el inicio de una trama.
 
 ## 2. Grupos de comando (GID) y opcodes (OID)
 
@@ -45,6 +49,16 @@ Bytes 4..: payload
 | *(propietario)* | `Qorvo` / `Calibration` | Ver [§6](#6-extensiones-propietarias-de-qorvo). |
 
 > **Nota:** los valores de `GID`/`OID` de esta tabla fueron confirmados por lectura directa de `fira_enums.py` (mismo archivo citado en §4) y coinciden byte a byte con esa fuente. Lo que **no** está confirmado todavía es el formato del *payload* de cada comando — antes de implementar el codec de un comando concreto, confirmar los campos del payload contra `uwb-uci-messages-api-*.pdf`.
+
+### 2.1 Formato de payload confirmado (comandos ya implementados)
+
+Los siguientes formatos de payload están confirmados tanto contra `fira.py`/`fira_msg.py` del SDK como contra una captura real de hardware (placa DWM3001CDK, firmware UCI `QM33SDK-1.1.1`) — implementados en `src/dwm3001c_uci/core/client.py` y `core/models.py`:
+
+| Comando | Payload del Command | Payload de la Response |
+|---|---|---|
+| `CORE_RESET` | **1 byte**: `0x00` (tipo de reset). Un payload vacío devuelve `Status.SYNTAX_ERROR` — confirmado contra hardware real, no es un valor opcional. | 1 byte: `Status`. |
+| `CORE_GET_DEVICE_INFO` | Vacío. | `Status` (1) + `uci_version` (2: major, minor\|maintenance en nibbles) + `mac_version` (2) + `phy_version` (2) + `uci_test_version` (2) + resto: datos específicos de Qorvo sin decodificar (`vendor_data`, ver [§6](#6-extensiones-propietarias-de-qorvo)). |
+| `CORE_GET_CAPS` | Vacío. | `Status` (1) + lista TLV de parámetros de capacidad (tag 1 byte, longitud 1 byte, valor). **No se decodifica todavía** — `get_caps_raw()` devuelve `(Status, bytes)` sin parsear la lista (ver `docs/plan-implementacion.md` F3). |
 
 ## 3. Notificaciones a manejar de forma asíncrona
 
@@ -71,7 +85,7 @@ Implementado en `src/dwm3001c_uci/uci/enums.py` (`Status`), con `status_name()` 
 ## 5. Transporte
 
 - El transporte confirmado para el protocolo UCI en este SDK es **UART** sobre el puerto COM virtual (USB CDC ACM) de la placa. No se relevó soporte de SPI a nivel de framing UCI del host (SPI se usa a nivel del driver del transceptor DW3xxx, capa distinta y fuera de alcance de este proyecto).
-- Parámetros exactos del puerto serie (baud rate, bits, paridad) para el binario `*-UCI-FreeRTOS.hex` **`[Sin confirmar]`** — no asumir que son los mismos que usa el firmware CLI de texto (115200 8N1). Confirmar contra la documentación del SDK antes de fijarlos como default (tarea de la fase F1 del plan de implementación).
+- **Baud rate confirmado: 115200.** Fuente: `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/addin_transport_uart.py`, clase `UartTransport.__init__` — `kwargs["baudrate"] = 115200` como valor por defecto de la propia herramienta de Qorvo para hablar UCI. Coincide con el valor que ya usaba el firmware CLI de texto, pero ahora está confirmado para UCI específicamente, no asumido por analogía. Bits/paridad/stop bits no vienen explícitos en ese archivo (pyserial usa 8N1 por defecto, que es lo que configura `SerialLink`); si se observa un problema de framing contra hardware real, revisar esto primero.
 
 ## 6. Extensiones propietarias de Qorvo
 
