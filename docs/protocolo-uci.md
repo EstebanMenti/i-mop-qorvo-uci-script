@@ -75,7 +75,7 @@ Los siguientes formatos de payload están confirmados tanto contra `fira.py`/`fi
 
 ### 2.2 `SESSION_SET_APP_CONFIG`: bloque TVS y máquina de estados confirmada
 
-`SESSION_SET_APP_CONFIG` usa una codificación genérica Tag-Value-Size, distinta de los payloads fijos de arriba: `count` (1 byte) + por cada parámetro, `tag` (1) + `longitud` (1) + `valor`. Formato confirmado contra `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/core.py` (función `tvs_to_bytes`) y `fira_app.py` (tabla de longitudes `App.defs`, que define ~90 parámetros en total — este proyecto solo implementa la codificación de 15, ver `uci/app_config.py`):
+`SESSION_SET_APP_CONFIG` usa una codificación genérica Tag-Value-Size, distinta de los payloads fijos de arriba: `count` (1 byte) + por cada parámetro, `tag` (1) + `longitud` (1) + `valor`. Formato confirmado contra `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/core.py` (función `tvs_to_bytes`) y `fira_app.py` (tabla de longitudes `App.defs`, que define ~90 parámetros en total — este proyecto implementa la codificación de 26, ver `uci/app_config.py`):
 
 | Parámetro (`AppConfigParam`) | Tag | Longitud | Valor usado por este proyecto |
 |---|---|---|---|
@@ -84,22 +84,33 @@ Los siguientes formatos de payload están confirmados tanto contra `fira.py`/`fi
 | `STS_CONFIG` | `0x02` | 1 | `0` (Static) |
 | `MULTI_NODE_MODE` | `0x03` | 1 | `MultiNodeMode.UNICAST` (default) |
 | `CHANNEL_NUMBER` | `0x04` | 1 | `9` (default) |
+| `NUMBER_OF_CONTROLEES` | `0x05` | 1 | `len(dst_mac_addresses)` |
 | `DEVICE_MAC_ADDRESS` | `0x06` | 2 | elegido por el llamador |
 | `DST_MAC_ADDRESS` | `0x07` | 2 por elemento (es una lista) | elegido por el llamador |
 | `SLOT_DURATION` | `0x08` | 2 | `2400` (default, en unidades RSTU) |
 | `RANGING_INTERVAL` | `0x09` | 4 | `200` (default, ms) |
+| `AOA_RESULT_REQ` | `0x0D` | 1 | `1` (default, "all-enabled") |
 | `DEVICE_ROLE` | `0x11` | 1 | `DeviceRole.INITIATOR`/`RESPONDER` |
 | `RFRAME_CONFIG` | `0x12` | 1 | `3` (default, "SP3"/`Qp3` en `fira_enums.py`) |
+| `RSSI_REPORTING` | `0x13` | 1 | `0` (default, deshabilitado) |
 | `PREAMBLE_CODE_INDEX` | `0x14` | 1 | `10` (default) |
 | `SFD_ID` | `0x15` | 1 | `2` (default) |
 | `SLOTS_PER_RR` | `0x1B` | 1 | `25` (default) |
 | `SCHEDULE_MODE` | `0x22` | 1 | `1` (default, "time") |
+| `VENDOR_ID` | `0x27` | 2 | `0x0708` (default, mitad de la clave STS estática) |
+| `STATIC_STS_IV` | `0x28` | 6 | `0x060504030201` (default, mitad de la clave STS estática) |
+| `UWB_INITIATION_TIME` | `0x2B` | 8 | `0` (default) |
+| `HOPPING_MODE` | `0x2C` | 1 | `0` (default, deshabilitado) |
+| `BLOCK_STRIDE_LENGTH` | `0x2D` | 1 | `0` (default) |
+| `RESULT_REPORT_CONFIG` | `0x2E` | 1 | `0x0B` (default, "tof\|azimuth\|fom") |
+| `MAX_NUMBER_OF_MEASUREMENTS` | `0x32` | 2 | `0` (default, sin límite) |
+| `STS_LENGTH` | `0x35` | 1 | `1` (default, 64 símbolos por segmento STS) |
 
-> **Hallazgo confirmado contra hardware real:** `run_fira_twr.py` del SDK etiqueta solo los primeros 5 (`DEVICE_TYPE`, `DEVICE_ROLE`, `MULTI_NODE_MODE`, `RANGING_ROUND_USAGE`, `DEVICE_MAC_ADDRESS`) como *"Fira Mandatory/minimal session config"*. **Eso no alcanza en la práctica**: se probó configurar una sesión con solo esos 5 (más `DST_MAC_ADDRESS`/`CHANNEL_NUMBER`) y el firmware acepta cada parámetro individualmente (`Status.OK`, ningún parámetro rechazado), pero `RANGING_START` seguía devolviendo `Status.ERROR_SESSION_NOT_CONFIGURED`. Agregando los 9 parámetros restantes de la tabla (con los mismos valores por defecto que usa `run_fira_twr.py`), `RANGING_START` pasó a devolver `Status.OK` y la sesión arrancó a rangear de verdad.
+> **Hallazgo confirmado contra hardware real:** `run_fira_twr.py` del SDK etiqueta solo los primeros 5 (`DEVICE_TYPE`, `DEVICE_ROLE`, `MULTI_NODE_MODE`, `RANGING_ROUND_USAGE`, `DEVICE_MAC_ADDRESS`) como *"Fira Mandatory/minimal session config"*. **Eso no alcanza en la práctica**: se probó configurar una sesión con solo esos 5 (más `DST_MAC_ADDRESS`/`CHANNEL_NUMBER`) y el firmware acepta cada parámetro individualmente (`Status.OK`, ningún parámetro rechazado), pero `RANGING_START` seguía devolviendo `Status.ERROR_SESSION_NOT_CONFIGURED`. Agregando el resto de los parámetros de la tabla (con los mismos valores por defecto que usa `run_fira_twr.py` del SDK y, para los últimos 8, también `uwb-qorvo-tools` — proyecto hermano con esta misma arquitectura de ranging validada), `RANGING_START` pasó a devolver `Status.OK` y la sesión arrancó a rangear de verdad.
 >
 > **Máquina de estados de sesión confirmada de punta a punta contra hardware real:** `SESSION_INIT` → `SessionState.INIT` (0) → `SESSION_SET_APP_CONFIG` exitoso → `SessionState.IDLE` (3) → `RANGING_START` → `SessionState.ACTIVE` (2) → `RANGING_STOP` → `SessionState.IDLE` (3) → `SESSION_DEINIT` → `SessionState.DEINIT` (1). Cada transición se confirmó tanto vía `SESSION_GET_STATE` como vía la `SESSION_STATUS_NTF` correspondiente.
 >
-> Todo esto se probó con **una sola placa, sin un segundo dispositivo que responda**: el `Controller` corre igual las rondas de ranging configuradas (confirmado: 9 rondas en ~1 segundo con `ranging_interval_ms=200`) y emite `RANGING_DATA_NTF` en cada una, aunque no haya `Controlee` — ver notificación en la sección siguiente. No se validó una medición de distancia real entre dos dispositivos.
+> **Medición de distancia real confirmada contra hardware** (`Controller`/`Initiator` con este cliente, `Controlee`/`Responder` en una segunda placa DWM3001CDK con firmware CLI, controlada por BLE — ver [ranging-mixto-cli-uci.md](ranging-mixto-cli-uci.md)): rondas con `Status.OK` y distancia real (`TwrMeasurement.distance_cm`) en decenas de centímetros, coherente con la separación física real entre placas. **Parámetro imprescindible no cubierto por esta tabla:** el `session_id` de `SESSION_INIT` debe coincidir con el `RESPF -ID` del lado CLI remoto — no es un valor de `SESSION_SET_APP_CONFIG` sino de `SESSION_INIT`/`session_handle`, y su desalineamiento (no documentado en ninguna fuente oficial de Qorvo relevada) fue la única causa real de varios intentos fallidos con `RANGING_RX_TIMEOUT` en el 100% de las rondas. Detalle completo en [ranging-mixto-cli-uci.md §4](ranging-mixto-cli-uci.md#4-resultado-contra-hardware-real-seis-corridas--ranging-logrado-en-la-sexta).
 
 ## 3. Notificaciones a manejar de forma asíncrona
 

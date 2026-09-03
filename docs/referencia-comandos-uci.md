@@ -126,7 +126,7 @@ RX: 41 00 00 05 | 00 01 00 00 00           ← Response: Status=OK, session_hand
 
 A diferencia de los demás comandos de este documento, el payload usa una codificación genérica **TVS** (Tag-Value-Size): `count` (1 byte) + por cada parámetro, `tag` (1) + `longitud` (1) + `valor`. Implementado en `uci/app_config.py::encode_app_config`.
 
-**Parámetros que acepta `session_set_app_config()`** (15 en total — subconjunto elegido de los ~90 que define el SDK, ver [protocolo-uci.md §2.2](protocolo-uci.md#22-session_set_app_config-bloque-tvs-y-máquina-de-estados-confirmada) para la tabla completa con tags):
+**Parámetros que acepta `session_set_app_config()`** (26 en total — subconjunto elegido de los ~90 que define el SDK, ver [protocolo-uci.md §2.2](protocolo-uci.md#22-session_set_app_config-bloque-tvs-y-máquina-de-estados-confirmada) para la tabla completa con tags):
 
 | Parámetro Python | Para qué sirve | Valor de ejemplo |
 |---|---|---|
@@ -145,10 +145,20 @@ A diferencia de los demás comandos de este documento, el payload usa una codifi
 | `slot_duration_us` | Duración de cada "slot" de tiempo dentro de una ronda de ranging (unidades RSTU). | `2400` (default) |
 | `ranging_interval_ms` | Cada cuánto se repite una ronda de ranging completa, en milisegundos. | `200` (default) |
 | `slots_per_rr` | Cantidad de slots por ronda de ranging. | `25` (default) |
+| `vendor_id` | Mitad (2 bytes) de la clave STS estática compartida — junto con `static_sts_iv`, debe coincidir en ambos dispositivos para que se "escuchen" en modo `sts_config=0`. | `0x0708` (default) |
+| `static_sts_iv` | La otra mitad (6 bytes) de la clave STS estática. Equivale al `VUPPER`/`vUpper64` que muestra la CLI como un solo valor de 8 bytes. | `0x060504030201` (default) |
+| `sts_length` | Símbolos por segmento STS: `0`=32, `1`=64, `2`=128. Debe coincidir con el perfil PRF usado (`BPRF4`, el default de la CLI, espera 64). | `1` (default) |
+| `aoa_result_req` | Si se piden resultados de ángulo de llegada (AoA) en el reporte de la ronda. | `1` (default, "all-enabled") |
+| `result_report_config` | Qué campos incluye el mensaje final de reporte de la ronda DS-TWR (tiempo de vuelo, azimuth, figura de mérito). | `0x0B` (default, "tof\|azimuth\|fom") |
+| `uwb_initiation_time` | Instante (unidad interna del chip) en que debería arrancar la primera ronda de ranging. | `0` (default, "ya") |
+| `hopping_mode` | Si la sesión salta de canal entre rondas. | `0` (default, deshabilitado) |
+| `block_stride_length` | Cuántos bloques de ranging se saltean entre ronda y ronda. | `0` (default, ninguno) |
+| `rssi_reporting` | Si se incluye la potencia de señal recibida (RSSI) en el reporte. | `0` (default, deshabilitado) |
+| `max_number_of_measurements` | Cuántas mediciones hacer antes de detenerse solo (0 = sin límite, hasta `RANGING_STOP`). | `0` (default) |
 
-Los parámetros marcados "(default)" tienen un valor por defecto razonable en `session_set_app_config()` (los mismos que usa `run_fira_twr.py` del SDK) — normalmente solo hace falta pasar explícitamente `device_type`, `device_role`, `device_mac_address` y `dst_mac_addresses`, que dependen de qué dispositivo es cada placa.
+Los parámetros marcados "(default)" tienen un valor por defecto razonable en `session_set_app_config()` (los mismos que usa `run_fira_twr.py` del SDK de Qorvo y, para los últimos 8 de la tabla, también `uwb-qorvo-tools` — un proyecto hermano con esta misma arquitectura de ranging validada) — normalmente solo hace falta pasar explícitamente `device_type`, `device_role`, `device_mac_address` y `dst_mac_addresses`, que dependen de qué dispositivo es cada placa. `number_of_controlees` **no** es un parámetro del método: se calcula solo como `len(dst_mac_addresses)`.
 
-**Ejemplo real:**
+**Ejemplo real** (captura histórica con el primer subconjunto de 15 parámetros que se confirmó contra hardware — hoy el cliente envía 26, ver arriba; el formato TVS es el mismo, solo cambia la cantidad de entradas):
 
 ```
 TX: 21 03 00 38 | 01 00 00 00 0f 00 01 01 11 01 01 03 01 00 01 01 02 06 02 00 00
@@ -167,7 +177,9 @@ RX: 41 03 00 02 | 00 00                     ← Response: Status=OK (el 0x00 ext
 
 **Devuelve:** `AppConfigResult(status, rejected)`. Si algún parámetro es inválido, `rejected` trae, por cada uno, su tag y el `Status` puntual del rechazo (no se probó este caso contra hardware real).
 
-**Hallazgo importante:** el SDK de Qorvo (`run_fira_twr.py`) etiqueta solo `device_type`, `device_role`, `multi_node_mode`, `ranging_round_usage`, `device_mac_address` como *"mandatory/minimal"*. **Eso no alcanza en la práctica** — se confirmó contra hardware real que con solo esos 5 (+ `dst_mac_addresses`/`channel_number`), el firmware acepta cada parámetro pero `RANGING_START` sigue fallando con `ERROR_SESSION_NOT_CONFIGURED`. Hacen falta los otros 9 (`sts_config` en adelante) para que el gate de "sesión configurada" se levante.
+**Hallazgo importante:** el SDK de Qorvo (`run_fira_twr.py`) etiqueta solo `device_type`, `device_role`, `multi_node_mode`, `ranging_round_usage`, `device_mac_address` como *"mandatory/minimal"*. **Eso no alcanza en la práctica** — se confirmó contra hardware real que con solo esos 5 (+ `dst_mac_addresses`/`channel_number`), el firmware acepta cada parámetro pero `RANGING_START` sigue fallando con `ERROR_SESSION_NOT_CONFIGURED`. Hacen falta los 21 restantes (`sts_config` en adelante) para que el gate de "sesión configurada" se levante *y* para lograr una medición de distancia real contra otro dispositivo (ver [ranging-mixto-cli-uci.md](ranging-mixto-cli-uci.md)).
+
+**Importante para ranging contra una segunda placa (no es un parámetro de este método):** el `session_id` pasado a `session_init()` debe coincidir con el que use el otro dispositivo para identificar la misma sesión (p. ej. `RESPF -ID` del lado CLI remoto). Esto no está documentado en ninguna fuente oficial de Qorvo relevada — se descubrió empíricamente tras varios intentos fallidos con `RANGING_RX_TIMEOUT` en el 100% de las rondas pese a que todo el resto de la configuración coincidía byte a byte. Ver [ranging-mixto-cli-uci.md §4](ranging-mixto-cli-uci.md#4-resultado-contra-hardware-real-seis-corridas--ranging-logrado-en-la-sexta).
 
 ### 3.3 `SESSION_GET_STATE` — `client.get_session_state(session_handle)`
 
