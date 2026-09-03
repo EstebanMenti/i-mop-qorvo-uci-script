@@ -180,6 +180,7 @@ class AppConfigParam(IntEnum):
     SCHEDULE_MODE = 0x22
     VENDOR_ID = 0x27
     STATIC_STS_IV = 0x28
+    STS_LENGTH = 0x35
 
 
 class DeviceType(IntEnum):

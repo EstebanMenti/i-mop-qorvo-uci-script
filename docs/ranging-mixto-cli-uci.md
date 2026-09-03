@@ -79,11 +79,12 @@ Ambos lados se configuraron con los **mismos valores por defecto** que usa el SD
 | `SLOTS_PER_RR` | 25 | idem |
 | `RFRAME_CONFIG` | SP3 (valor `3`) | idem |
 | `SFD_ID` | 2 | idem |
-| **`VENDOR_ID`** | `0x0708` | Agregado a `session_set_app_config()` en esta iteración — antes no se fijaba explícitamente del lado UCI |
+| **`VENDOR_ID`** | `0x0708` | Confirmado contra Tabla 7.6 del Developer Manual: la CLI expone `VENDOR_ID`+`STATIC_STS_IV` como un solo valor de 8 bytes (`VUPPER`/`vUpper64`, default `01:02:03:04:05:06:07:08`) — `vendor_id`/`static_sts_iv` son los dos "pedazos" en que UCI la separa |
 | **`STATIC_STS_IV`** | `01:02:03:04:05:06` | idem — clave STS estática compartida, necesaria para que dos dispositivos en modo STS estático (`STS_CONFIG=0`) se "escuchen" |
+| **`STS_LENGTH`** | `1` (64 símbolos) | Confirmado contra Tabla 7.7 del Developer Manual ("BPRF mode operating parameter sets"): el perfil `PRFSET=BPRF4` (default de la CLI) usa `STS Segment Length = 64` símbolos. Agregado en la segunda iteración — antes no se fijaba en absoluto del lado UCI |
 | Direcciones MAC | Local `0x0000` (Controller/Initiator), remota `0x0001` (Controlee/Responder) | Coincide con los defaults de `RESPF` (`ADDR=1, PADDR=0`) |
 
-## 4. Resultado de la primera corrida contra hardware real
+## 4. Resultado contra hardware real (dos corridas)
 
 **Fecha:** 2026-09-03. **Placas:** local en `COM29` (firmware UCI), remota `UWB-Node-2` (DWM3001CDK detrás de un puente nRF52840, firmware CLI `1.1.0`, build `Aug 10 2026`).
 
@@ -100,11 +101,13 @@ Ambos lados se configuraron con los **mismos valores por defecto** que usa el SD
 - **Ambos lados** reportaron timeout en cada ronda: el lado remoto (`SESSION_INFO_NTF`) con `status="RX_TIMEOUT"` contra `mac_address=0x0000` (la placa local), y el lado local (`TwrMeasurement` decodificado de `RANGING_DATA_NTF`) con `status=RANGING_RX_TIMEOUT` contra `mac_address=00:01` (la placa remota). Ninguna ronda devolvió una distancia real.
 - El lado local dejó de recibir `RANGING_DATA_NTF` después de las primeras rondas (se observaron 3, no las ~40 esperadas en 8 s a 200 ms/ronda) — comportamiento distinto al de una sesión sin ningún par real (que sí sigue emitiendo una notificación por ronda de forma constante, ver `docs/referencia-comandos-uci.md` §4.1). Sugiere algún tipo de interacción a nivel MAC entre los dos dispositivos reales (colisión, backoff) que no se investigó en profundidad todavía.
 
-**Hipótesis para una próxima iteración (sin confirmar, orden sugerido de investigación):**
+**Segunda corrida (mismo día, con `STS_LENGTH=1` agregado tras leer la Tabla 7.7 del Developer Manual — ver §3):** resultado idéntico. Se descarta `STS_LENGTH` desalineado como causa única. El resto de los campos de la Tabla 7.7 para `BPRF4` (`SYNC PSR=64`, `SFD#=2`, `SFD Length=8`, `STS nr of Segments=1`) coinciden con lo que ya se tenía (`SFD_ID=2`) o son valores que ninguno de los dos lados fija explícitamente y que, al ser el default estándar de ambos firmwares para un solo segmento STS, no son sospechosos de estar desalineados.
 
-1. **Perfil PRF (`PRFSET=BPRF4` en la CLI):** agrupa varios parámetros PHY (tasa de datos PSDU, duración de preámbulo, tasa de PHR) que `session_set_app_config()` no fija explícitamente del lado UCI — podrían no coincidir con el perfil BPRF4 aunque los campos que sí controlamos (`SFD_ID`, `PCODE`, `RFRAME_CONFIG`) coincidan.
-2. **Distancia/obstrucción física real** entre las dos placas al momento de la prueba — no verificada; UWB tiene alcance corto y es sensible a obstáculos.
-3. Revisar si `UWB_INITIATION_TIME`/otros parámetros de sincronización fina (no controlados por ninguno de los dos lados explícitamente) requieren alineación.
+**Hipótesis para una próxima iteración, en orden de sospecha tras estos dos intentos:**
+
+1. **Distancia/obstrucción física real entre las dos placas** — no verificada en ninguna de las dos corridas. Dado que se descartó una desalineación de parámetros obvia (canal, preámbulo, RRU, timing, clave STS, longitud STS todos coinciden byte a byte con lo documentado), esta pasa a ser la hipótesis más probable: **confirmar que ambas placas estén físicamente cerca (unos pocos metros) y sin obstáculos entre sí al momento de la prueba** antes de seguir ajustando parámetros de software.
+2. Parámetros PHY más finos del perfil `BPRF4` no cubiertos por `App.defs` tal como se releva hasta ahora (tasa de datos PSDU, duración de preámbulo, tasa de PHR) — requeriría relevar `uwb-l1-configuration-*.pdf` del SDK para confirmar si son parámetros configurables por `SESSION_SET_APP_CONFIG` o fijos por el perfil PRF elegido a nivel de driver.
+3. `UWB_INITIATION_TIME`/otros parámetros de sincronización fina no controlados por ninguno de los dos lados explícitamente.
 
 ## 5. Qué no se automatizó (tests)
 

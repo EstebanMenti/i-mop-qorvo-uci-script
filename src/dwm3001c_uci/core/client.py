@@ -143,6 +143,7 @@ class UciClient:
         slots_per_rr: int = 25,
         vendor_id: int = 0x0708,
         static_sts_iv: int = 0x060504030201,
+        sts_length: int = 1,
     ) -> AppConfigResult:
         """Envia `SESSION_SET_APP_CONFIG` con un conjunto minimo de parametros.
 
@@ -172,7 +173,22 @@ class UciClient:
           que dos dispositivos completen un ranging real en modo STS estatico
           (`sts_config=0`), **ambos necesitan la misma clave** — dejar el
           default acá facilita interoperar con una placa CLI sin tener que
-          pasarlo a mano.
+          pasarlo a mano. Confirmado contra el Developer Manual del SDK
+          (Tabla 7.6) que la CLI expone esta misma clave como un solo valor
+          de 8 bytes (`VUPPER`, `vUpper64`), del cual `vendor_id`/
+          `static_sts_iv` son los dos "pedazos" en los que UCI la separa.
+        - `sts_length`: cantidad de simbolos por segmento STS (`0`=32,
+          `1`=64, `2`=128). El default (`1`, 64 simbolos) coincide con lo que
+          documenta la Tabla 7.7 del Developer Manual para el perfil
+          `PRFSET=BPRF4` (el que usa la CLI por defecto en `INITF`/`RESPF`) y
+          con el default de `run_fira_twr.py` del SDK. A diferencia de
+          `vendor_id`/`static_sts_iv`, **este parametro no se fijaba en
+          absoluto** en versiones anteriores de este cliente — el firmware
+          UCI usaba su propio default, sin confirmar si coincidia con 64
+          simbolos. Si no coincide con el del otro extremo, la secuencia STS
+          generada en cada lado no es la misma y el receptor no puede
+          decodificar la trama de ranging del otro dispositivo (efecto
+          esperado: timeout en cada ronda, sin ningun otro sintoma).
 
         No soporta el resto de los parametros de `App.defs` (STS
         provisionado/con clave, diagnosticos Qorvo, DL-TDoA, ...).
@@ -199,6 +215,7 @@ class UciClient:
             (AppConfigParam.SLOTS_PER_RR, slots_per_rr),
             (AppConfigParam.VENDOR_ID, vendor_id),
             (AppConfigParam.STATIC_STS_IV, static_sts_iv),
+            (AppConfigParam.STS_LENGTH, sts_length),
         ]
         payload = session_handle.to_bytes(4, "little") + encode_app_config(params)
         message = self._send_command_and_wait_response(
