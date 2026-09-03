@@ -86,18 +86,18 @@ Ambos lados se configuraron con los **mismos valores por defecto** que usa el SD
 | **`STS_LENGTH`** | `1` (64 símbolos) | Confirmado contra Tabla 7.7 del Developer Manual ("BPRF mode operating parameter sets"): el perfil `PRFSET=BPRF4` (default de la CLI) usa `STS Segment Length = 64` símbolos. Agregado en la segunda iteración — antes no se fijaba en absoluto del lado UCI |
 | Direcciones MAC | Local `0x0000` (Controller/Initiator), remota `0x0001` (Controlee/Responder) | Coincide con los defaults de `RESPF` (`ADDR=1, PADDR=0`) |
 
-## 4. Resultado contra hardware real (cuatro corridas)
+## 4. Resultado contra hardware real (cinco corridas)
 
-**Fecha:** 2026-09-03. **Placas:** local en `COM29` (firmware UCI), remota `UWB-Node-2` (DWM3001CDK detrás de un puente nRF52840, firmware CLI `1.1.0`, build `Aug 10 2026`). **Confirmado por el usuario:** ambas placas están físicamente cerca y sin obstáculos — se descarta distancia/obstrucción como causa.
+**Fecha:** 2026-09-03. **Placas:** local en `COM29` (firmware UCI), remota `UWB-Node-2` (DWM3001CDK detrás de un puente nRF52840, firmware CLI `1.1.0`, build `Aug 10 2026`, `UWB stack: R12.7.0-405-gb33c5c4272`). **Confirmado por el usuario:** ambas placas están físicamente cerca y sin obstáculos — se descarta distancia/obstrucción como causa.
 
-**✅ Positivo, estable en las cuatro corridas — toda la plomería funciona de punta a punta:**
+**✅ Positivo, estable en las cinco corridas — toda la plomería funciona de punta a punta:**
 
 - Escaneo y conexión BLE al puente (`UWB-Node-2`, dirección `FE:79:A2:F3:52:B9`).
 - `qorvo on` encendió el Qorvo remoto; `qorvo STAT` devolvió el JSON de estado real.
 - `qorvo RESPF -CHAN=<N> -PCODE=10 -RRU=DSTWR -ADDR=1 -PADDR=0` arrancó el responder remoto y devolvió el volcado completo de parámetros FiRa — coincidiendo campo a campo con lo esperado (`STATIC_STS_IV: "01:02:03:04:05:06"`, `VENDOR_ID: "07:08"`, etc.), en canal 9 y en canal 5.
 - El lado local completó `SESSION_INIT` → `SESSION_SET_APP_CONFIG` (`Status.OK`, sin parámetros rechazados) → `RANGING_START` (`Status.OK`, sesión pasó a `ACTIVE`).
 
-**❌ No logrado, en las cuatro corridas — el ranging físico real:** ambos lados reportan timeout en cada ronda (remoto: `SESSION_INFO_NTF` con `status="RX_TIMEOUT"`; local: `TwrMeasurement` con `status=RANGING_RX_TIMEOUT`). Ninguna ronda devolvió una distancia real.
+**❌ No logrado, en las cinco corridas — el ranging físico real:** ambos lados reportan timeout en cada ronda (remoto: `SESSION_INFO_NTF` con `status="RX_TIMEOUT"`; local: `TwrMeasurement` con `status=RANGING_RX_TIMEOUT`). Ninguna ronda devolvió una distancia real.
 
 **Bitácora de las cuatro corridas:**
 
@@ -111,10 +111,60 @@ Ambos lados se configuraron con los **mismos valores por defecto** que usa el SD
 
 **Hipótesis restantes para una próxima iteración:**
 
-1. Parámetros PHY más finos del perfil `BPRF4` no cubiertos por el subconjunto de `App.defs` que implementa este proyecto (tasa de datos PSDU, duración de preámbulo, tasa de PHR, modo PRF explícito) — requeriría relevar `uwb-l1-configuration-*.pdf`/`uwb-fira-protocol-*.pdf` del SDK para confirmar si son configurables por `SESSION_SET_APP_CONFIG` o quedan fijos por el perfil PRF a nivel de driver, y si el UCI firmware realmente iguala el perfil `BPRF4` de la CLI con los campos que sí controlamos.
-2. `UWB_INITIATION_TIME`/otros parámetros de sincronización fina no controlados explícitamente por ninguno de los dos lados.
-3. Alguna diferencia de comportamiento entre el motor FiRa tal como lo maneja el firmware CLI (vía "helpers API", llamada local) y el motor tal como lo maneja el firmware UCI (vía protocolo binario) que no sea puramente de configuración — es decir, que la premisa "ambos usan la misma uwb-stack, solo cambia la interfaz de control" (confirmada arquitectónicamente en el Developer Manual, ver `docs/plan-implementacion.md`) tenga alguna excepción no documentada.
-4. Interferencia de canal como factor agravante (no descartada del todo, solo como causa única) — repetir con la flota de otras placas apagada, si es posible coordinarlo.
+1. ~~Parámetros PHY más finos del perfil `BPRF4` no cubiertos por el subconjunto de `App.defs` que implementa este proyecto~~ — parcialmente resuelto, ver corrida 5 abajo: se leyó completa la Tabla 7.2 de la especificación oficial `uwb-uci-messages-api` y se comparó `session_set_app_config()` contra `run_fira_twr.py` del SDK (el script de referencia *propio de Qorvo* para correr TWR por UCI, no la CLI). Quedan sin cubrir parámetros que ese mismo script de referencia tampoco fija explícitamente (`PSDU_DATA_RATE`, `PREAMBLE_DURATION`, `PRF_MODE`, `RANGING_ROUND_CONTROL`) — al no estar en la lista "mandatory" de Qorvo, se asume que su default de firmware ya es el correcto y no se agregan por ahora.
+2. ~~`UWB_INITIATION_TIME`/otros parámetros de sincronización fina no controlados explícitamente por ninguno de los dos lados~~ — resuelto en corrida 5: ahora se fija explícitamente (`UWB_INITIATION_TIME=0`, igual que el default de `run_fira_twr.py`).
+3. Alguna diferencia de comportamiento entre el motor FiRa tal como lo maneja el firmware CLI (vía "helpers API", llamada local) y el motor tal como lo maneja el firmware UCI (vía protocolo binario) que no sea puramente de configuración — es decir, que la premisa "ambos usan la misma uwb-stack, solo cambia la interfaz de control" (confirmada arquitectónicamente en el Developer Manual, ver `docs/plan-implementacion.md`) tenga alguna excepción no documentada. **Sigue sin descartarse.**
+4. Interferencia de canal como factor agravante (no descartada del todo, solo como causa única) — repetir con la flota de otras placas apagada, si es posible coordinarlo. **Sigue sin descartarse.**
+
+### Corrida 5 (planeada): paridad completa con `run_fira_twr.py`
+
+Tras las cuatro corridas de arriba, se releyó la especificación oficial completa
+`uwb-uci-messages-api-R12.7.0-405.pdf` (Tabla 7.2, "Application Configuration
+Parameters") y se comparó `session_set_app_config()` de este proyecto contra
+`run_fira_twr.py` del SDK Qorvo (`SDK/Tools/uwb-qorvo-tools/scripts/fira/`),
+que es la implementación de referencia **propia de Qorvo** para correr una
+sesión de TWR por UCI (mismo protocolo que este proyecto, no la CLI de
+texto). Ese script arma su lista de `app_configs` con 22-23 parámetros en
+toda corrida; este proyecto solo enviaba 18. Los 7 que faltaban y ya se
+agregaron (`AOA_RESULT_REQ`, `RESULT_REPORT_CONFIG`, `UWB_INITIATION_TIME`,
+`HOPPING_MODE`, `BLOCK_STRIDE_LENGTH`, `RSSI_REPORTING`,
+`MAX_NUMBER_OF_MEASUREMENTS`), con los mismos valores por defecto que usa ese
+script (ver `core/client.py::session_set_app_config`).
+
+**`[Sin confirmar]`**: no se descarta que alguno de estos parámetros —
+particularmente `RESULT_REPORT_CONFIG` (qué campos incluye el mensaje final
+de reporte de la ronda DS-TWR) o `AOA_RESULT_REQ` — sea la causa real del
+`RANGING_RX_TIMEOUT` persistente si el firmware CLI remoto y el firmware UCI
+local terminan con valores de firmware-default distintos para alguno de
+ellos al no fijarlos explícitamente. Esta es una hipótesis, no un hallazgo:
+falta la quinta corrida contra hardware real para confirmar o descartar.
+
+**Resultado de la corrida 5 (2026-09-03, mismo hardware que las cuatro
+anteriores):** el firmware local aceptó los 25 parámetros sin rechazar
+ninguno (`session_set_app_config` devolvió `Status.OK`, `rejected=()`,
+`RANGING_START` pasó a `ACTIVE` normalmente). El volcado de `RESPF` remoto
+mostró los mismos valores de siempre (`STATIC_STS_IV`, `VENDOR_ID`, canal,
+`RRU`, timing — todo coincide). **El resultado de ranging fue idéntico a las
+cuatro corridas anteriores:** 45 rondas observadas del lado local en 8s,
+las 45 con `status=RANGING_RX_TIMEOUT`; el lado remoto mostró la misma
+cantidad de `SESSION_INFO_NTF` con `status="RX_TIMEOUT"`. **Se descarta la
+hipótesis de "faltaba un parámetro de `SESSION_SET_APP_CONFIG`"**: se llegó
+a la paridad completa con la implementación de referencia oficial de Qorvo
+para UCI (`run_fira_twr.py`) y el resultado no cambió en absoluto.
+
+**Replanteo tras la corrida 5:** con dos fuentes independientes agotadas (la
+especificación oficial completa y el script de referencia oficial de Qorvo
+para UCI), la evidencia ahora apunta con más fuerza a la hipótesis 3 de
+arriba — una diferencia real entre el camino CLI (`RESPF`/`INITF`, código C
+del firmware que no está disponible como fuente en este SDK) y el camino UCI
+(protocolo binario), más que a un parámetro de configuración faltante. Un
+diagnóstico decisivo y todavía no probado: **repetir este mismo
+`session_set_app_config`/`ranging_start` entre dos placas que corran ambas
+firmware UCI** (sin ningún CLI/BLE de por medio). Si ese caso funciona
+(mide distancia real), confirma que la lógica de este cliente es correcta y
+aísla el problema al puente CLI↔UCI. Si también falla, el problema está en
+cómo este cliente arma la sesión, no en la mezcla CLI/UCI. Pendiente:
+conseguir una segunda placa con firmware UCI para esta prueba.
 
 ## 5. Qué no se automatizó (tests)
 

@@ -184,6 +184,13 @@ class UciClient:
         vendor_id: int = 0x0708,
         static_sts_iv: int = 0x060504030201,
         sts_length: int = 1,
+        aoa_result_req: int = 1,
+        result_report_config: int = 0x0B,
+        uwb_initiation_time: int = 0,
+        hopping_mode: int = 0,
+        block_stride_length: int = 0,
+        rssi_reporting: int = 0,
+        max_number_of_measurements: int = 0,
     ) -> AppConfigResult:
         """Envia `SESSION_SET_APP_CONFIG` con un conjunto minimo de parametros.
 
@@ -229,13 +236,34 @@ class UciClient:
           generada en cada lado no es la misma y el receptor no puede
           decodificar la trama de ranging del otro dispositivo (efecto
           esperado: timeout en cada ronda, sin ningun otro sintoma).
+        - `aoa_result_req`, `result_report_config`, `uwb_initiation_time`,
+          `hopping_mode`, `block_stride_length`, `rssi_reporting`,
+          `max_number_of_measurements`: agregados a partir de comparar este
+          metodo contra `run_fira_twr.py` del SDK -- el script de referencia
+          *propio de Qorvo* para correr TWR por UCI (no la CLI de texto).
+          Ese script los incluye en su lista de `app_configs` para toda
+          corrida, junto a los parametros ya cubiertos arriba; este cliente
+          no los fijaba en absoluto y dejaba que el firmware aplicara su
+          propio default. Valores por defecto identicos a los de
+          `run_fira_twr.py` (`aoa_result_req=1` "all-enabled",
+          `result_report_config=0x0B` "tof|azimuth|fom", el resto en su
+          valor mas conservador/deshabilitado). **`[Sin confirmar]`** que
+          alguno de estos sea la causa de un `RANGING_RX_TIMEOUT` persistente
+          documentado en `docs/ranging-mixto-cli-uci.md` -- se agregan para
+          alcanzar paridad con la implementacion de referencia de Qorvo y
+          descartar (o confirmar) esa hipotesis contra hardware real.
 
         No soporta el resto de los parametros de `App.defs` (STS
         provisionado/con clave, diagnosticos Qorvo, DL-TDoA, ...).
 
-        Validado contra hardware real con una sola placa: el firmware acepta
-        este conjunto sin rechazar ningun parametro, y permite completar
-        rondas de ranging (ver `ranging_start`). Ver docs/plan-implementacion.md.
+        Validado contra hardware real con una sola placa (los primeros 18
+        parametros, sin los 7 agregados mas arriba para paridad con
+        `run_fira_twr.py`): el firmware acepta ese subconjunto sin rechazar
+        ningun parametro, y permite completar rondas de ranging (ver
+        `ranging_start`). **`[Sin confirmar]`** que el firmware acepte
+        tambien los 7 parametros nuevos sin rechazarlos -- pendiente de
+        confirmar en la proxima corrida contra hardware real. Ver
+        docs/plan-implementacion.md.
         """
         params: list[tuple[int, int | Sequence[int]]] = [
             (AppConfigParam.DEVICE_TYPE, int(device_type)),
@@ -256,6 +284,13 @@ class UciClient:
             (AppConfigParam.VENDOR_ID, vendor_id),
             (AppConfigParam.STATIC_STS_IV, static_sts_iv),
             (AppConfigParam.STS_LENGTH, sts_length),
+            (AppConfigParam.AOA_RESULT_REQ, aoa_result_req),
+            (AppConfigParam.RESULT_REPORT_CONFIG, result_report_config),
+            (AppConfigParam.UWB_INITIATION_TIME, uwb_initiation_time),
+            (AppConfigParam.HOPPING_MODE, hopping_mode),
+            (AppConfigParam.BLOCK_STRIDE_LENGTH, block_stride_length),
+            (AppConfigParam.RSSI_REPORTING, rssi_reporting),
+            (AppConfigParam.MAX_NUMBER_OF_MEASUREMENTS, max_number_of_measurements),
         ]
         payload = session_handle.to_bytes(4, "little") + encode_app_config(params)
         message = self._send_command_and_wait_response(

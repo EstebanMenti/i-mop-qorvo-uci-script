@@ -160,7 +160,13 @@ class AppConfigParam(IntEnum):
     falta ademas de los 5 "mandatory" para que `RANGING_START` deje de
     devolver `Status.ERROR_SESSION_NOT_CONFIGURED` (con solo los 5 originales
     el firmware acepta cada parametro individualmente pero el gate de sesion
-    configurada no se levanta). Ver `uci/app_config.py` y docs/protocolo-uci.md.
+    configurada no se levanta), mas 7 parametros adicionales
+    (`AOA_RESULT_REQ`, `RESULT_REPORT_CONFIG`, `UWB_INITIATION_TIME`,
+    `HOPPING_MODE`, `BLOCK_STRIDE_LENGTH`, `RSSI_REPORTING`,
+    `MAX_NUMBER_OF_MEASUREMENTS`) agregados para alcanzar paridad completa
+    con la lista de `app_configs` que arma `run_fira_twr.py` en cada corrida
+    -- ver `core/client.py::session_set_app_config`. Ver `uci/app_config.py`
+    y docs/protocolo-uci.md.
     """
 
     DEVICE_TYPE = 0x00
@@ -172,14 +178,21 @@ class AppConfigParam(IntEnum):
     DST_MAC_ADDRESS = 0x07
     SLOT_DURATION = 0x08
     RANGING_INTERVAL = 0x09
+    AOA_RESULT_REQ = 0x0D
     DEVICE_ROLE = 0x11
     RFRAME_CONFIG = 0x12
+    RSSI_REPORTING = 0x13
     PREAMBLE_CODE_INDEX = 0x14
     SFD_ID = 0x15
     SLOTS_PER_RR = 0x1B
     SCHEDULE_MODE = 0x22
     VENDOR_ID = 0x27
     STATIC_STS_IV = 0x28
+    UWB_INITIATION_TIME = 0x2B
+    HOPPING_MODE = 0x2C
+    BLOCK_STRIDE_LENGTH = 0x2D
+    RESULT_REPORT_CONFIG = 0x2E
+    MAX_NUMBER_OF_MEASUREMENTS = 0x32
     STS_LENGTH = 0x35
 
 
