@@ -44,7 +44,7 @@ Bytes 4..: payload
 | `0x0D` | `Test` | `CONFIG_SET` (`0x00`), `CONFIG_GET` (`0x01`), `PERIODIC_TX` (`0x02`), `PER_RX` (`0x03`), `RX` (`0x05`), `LOOPBACK` (`0x06`), `STOP_SESSION` (`0x07`), `SS_TWR` (`0x08`) |
 | *(propietario)* | `Qorvo` / `Calibration` | Ver [§6](#6-extensiones-propietarias-de-qorvo). |
 
-> **Nota:** esta tabla es un resumen orientativo extraído de la implementación de referencia. Antes de implementar el codec de un comando concreto, confirmar los campos del payload contra `uwb-uci-messages-api-*.pdf`.
+> **Nota:** los valores de `GID`/`OID` de esta tabla fueron confirmados por lectura directa de `fira_enums.py` (mismo archivo citado en §4) y coinciden byte a byte con esa fuente. Lo que **no** está confirmado todavía es el formato del *payload* de cada comando — antes de implementar el codec de un comando concreto, confirmar los campos del payload contra `uwb-uci-messages-api-*.pdf`.
 
 ## 3. Notificaciones a manejar de forma asíncrona
 
@@ -57,14 +57,16 @@ Al menos las siguientes `Notification` pueden llegar sin estar correlacionadas 1
 
 ## 4. Códigos de estado (`Status`)
 
-| Categoría | Valores relevados |
-|---|---|
-| Genéricos | `OK` (`0x00`), `REJECTED`, `FAILED`, `SYNTAX_ERROR`, `INVALID_PARAM`, `INVALID_RANGE`, `INVALID_MESSAGE_SIZE`, `UNKNOWN_GID`, `UNKNOWN_OID`, `READ_ONLY`, `COMMAND_RETRY` |
-| Sesión | `ERROR_SESSION_NOT_EXIST`, `ERROR_SESSION_DUPLICATE`, `ERROR_SESSION_ACTIVE`, `ERROR_MAX_SESSIONS_EXCEEDED`, `ERROR_MULTICAST_LIST_FULL` |
-| Ranging | `RANGING_TX_FAILED`, `RANGING_RX_TIMEOUT`, `RANGING_RX_PHY_DEC_FAILED`, entre otros |
-| Propietario | Rango `0x50`–`0xFF` reservado para códigos específicos de Qorvo (ej. `ERROR_SE_BUSY`) |
+Valores confirmados por lectura directa de `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/fira_enums.py` (clase `Status`, release `QM33SDK-1.1.1`) — no son un resumen aproximado, coinciden byte a byte con esa fuente:
 
-Toda respuesta con `Status != OK` debe reportarse en logs y en el reporte de validación con el **nombre simbólico**, no solo el valor numérico (ver [../CLAUDE.md §2.2](../CLAUDE.md#22-estilo-y-calidad)).
+| Categoría | Valores confirmados |
+|---|---|
+| Genéricos (`0x00`–`0x0A`) | `OK` (`0x00`), `REJECTED` (`0x01`), `FAILED` (`0x02`), `SYNTAX_ERROR` (`0x03`), `INVALID_PARAM` (`0x04`), `INVALID_RANGE` (`0x05`), `INVALID_MESSAGE_SIZE` (`0x06`), `UNKNOWN_GID` (`0x07`), `UNKNOWN_OID` (`0x08`), `READ_ONLY` (`0x09`), `COMMAND_RETRY` (`0x0A`) |
+| Sesión (`0x11`–`0x1B`) | `ERROR_SESSION_NOT_EXIST` (`0x11`), `ERROR_SESSION_DUPLICATE` (`0x12`), `ERROR_SESSION_ACTIVE` (`0x13`), `ERROR_MAX_SESSIONS_EXCEEDED` (`0x14`), `ERROR_SESSION_NOT_CONFIGURED` (`0x15`), `ERROR_ACTIVE_SESSIONS_ONGOING` (`0x16`), `ERROR_MULTICAST_LIST_FULL` (`0x17`), `ERROR_UWB_INITIALIZATION_TIME_TOO_OLD` (`0x1A`), `RANGING_NEGATIVE_DISTANCE` (`0x1B`) |
+| Ranging (`0x20`–`0x2A`) | `RANGING_TX_FAILED` (`0x20`), `RANGING_RX_TIMEOUT` (`0x21`), `RANGING_RX_PHY_DEC_FAILED` (`0x22`), `RANGING_RX_PHY_TOA_FAILED` (`0x23`), `RANGING_RX_PHY_STS_FAILED` (`0x24`), `RANGING_RX_MAC_DEC_FAILED` (`0x25`), `RANGING_RX_MAC_IE_DEC_FAILED` (`0x26`), `RANGING_RX_MAC_IE_MISSING` (`0x27`), `ERROR_ROUND_INDEX_NOT_ACTIVATED` (`0x28`), `ERROR_NUMBER_OF_ACTIVE_ROUND_EXCEEDED` (`0x29`), `ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST` (`0x2A`) |
+| Propietario (`0x50`–`0xFF`) | Solo confirmados: `ERROR_SE_BUSY` (`0x50`), `ERROR_CCC_LIFE_CYCLE` (`0x51`), `UNKNOWN` (`0xFF`, usado por la librería de referencia como valor de relleno). El resto del rango no está enumerado — no asumir su significado sin volver a esta fuente. |
+
+Implementado en `src/dwm3001c_uci/uci/enums.py` (`Status`), con `status_name()` como fallback seguro para valores no enumerados (p. ej. si el firmware devuelve un código propietario no listado arriba). Toda respuesta con `Status != OK` debe reportarse en logs y en el reporte de validación con el **nombre simbólico**, no solo el valor numérico (ver [../CLAUDE.md §2.2](../CLAUDE.md#22-estilo-y-calidad)).
 
 ## 5. Transporte
 

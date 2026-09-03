@@ -1,0 +1,51 @@
+[project]
+name = "dwm3001c-uci"
+version = "0.1.0"
+description = "Herramienta CLI en Python para probar la comunicacion UCI con el modulo Qorvo DWM3001C"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Uso interno - todos los derechos reservados" }
+authors = [{ name = "Esteban Menti" }]
+dependencies = [
+    "pyserial>=3.5",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "types-pyserial>=3.5",
+]
+
+# [project.scripts] se declara en la fase F7 del plan de implementacion,
+# cuando exista src/dwm3001c_uci/app/cli.py con el objeto `app` de Typer.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "hardware: marca tests que requieren una placa DWM3001CDK real conectada",
+]
+addopts = "-m 'not hardware'"
