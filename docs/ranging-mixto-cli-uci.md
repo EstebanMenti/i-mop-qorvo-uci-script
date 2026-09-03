@@ -58,6 +58,8 @@ Orquesta un ciclo completo:
 
 **La distancia se mide del lado UCI, no del lado CLI** — confirmado que hace falta: la especificación del bridge documenta explícitamente que `qorvo <comando>` es estrictamente petición/respuesta y **no reenvía notificaciones asíncronas** no solicitadas del Qorvo (`SESSION_INFO_NTF` con la distancia real). En la práctica, si las notificaciones llegan lo bastante seguido (cada `RANGING_DURATION`, por defecto 200 ms, muy por debajo del margen de silencio de 400 ms del bridge), sí quedan capturadas dentro de la ventana de respuesta del comando que las precede (confirmado: ver §4) — pero esto es incidental, no algo en lo que apoyarse: el mecanismo de medición soportado por este proyecto es el lado UCI.
 
+> **Bug real encontrado y corregido durante esta investigación:** la primera versión de este loop usaba `time.sleep(poll_interval_s)` para esperar notificaciones espontáneas. `UciClient` **no tiene ningún hilo de fondo leyendo el puerto serie** — los bytes solo se leen y decodifican como efecto colateral de `_send_command_and_wait_response()` (al esperar la `Response` de un comando activo). Dormir sin enviar nada deja los bytes acumulándose sin leer en el buffer del sistema operativo: solo se veían 2-3 notificaciones por corrida (las que alcanzaban a colarse en la lectura de `ranging_start()`/`ranging_stop()`), nunca las decenas reales que el firmware efectivamente mandaba. Se agregó `UciClient.poll_notifications(duration_s)` (lee y decodifica en loop sin esperar ningún comando específico) y `mixed_ranging.py` ahora lo usa en vez de dormir — confirmado contra hardware real: con el fix, una corrida de 8s pasó de "ver" 3 rondas a ver las 45 reales.
+
 ### Uso
 
 ```bash
@@ -84,30 +86,35 @@ Ambos lados se configuraron con los **mismos valores por defecto** que usa el SD
 | **`STS_LENGTH`** | `1` (64 símbolos) | Confirmado contra Tabla 7.7 del Developer Manual ("BPRF mode operating parameter sets"): el perfil `PRFSET=BPRF4` (default de la CLI) usa `STS Segment Length = 64` símbolos. Agregado en la segunda iteración — antes no se fijaba en absoluto del lado UCI |
 | Direcciones MAC | Local `0x0000` (Controller/Initiator), remota `0x0001` (Controlee/Responder) | Coincide con los defaults de `RESPF` (`ADDR=1, PADDR=0`) |
 
-## 4. Resultado contra hardware real (dos corridas)
+## 4. Resultado contra hardware real (cuatro corridas)
 
-**Fecha:** 2026-09-03. **Placas:** local en `COM29` (firmware UCI), remota `UWB-Node-2` (DWM3001CDK detrás de un puente nRF52840, firmware CLI `1.1.0`, build `Aug 10 2026`).
+**Fecha:** 2026-09-03. **Placas:** local en `COM29` (firmware UCI), remota `UWB-Node-2` (DWM3001CDK detrás de un puente nRF52840, firmware CLI `1.1.0`, build `Aug 10 2026`). **Confirmado por el usuario:** ambas placas están físicamente cerca y sin obstáculos — se descarta distancia/obstrucción como causa.
 
-**✅ Positivo — toda la plomería funcionó de punta a punta, sin ningún ajuste:**
+**✅ Positivo, estable en las cuatro corridas — toda la plomería funciona de punta a punta:**
 
 - Escaneo y conexión BLE al puente (`UWB-Node-2`, dirección `FE:79:A2:F3:52:B9`).
 - `qorvo on` encendió el Qorvo remoto; `qorvo STAT` devolvió el JSON de estado real.
-- `qorvo RESPF -CHAN=9 -PCODE=10 -RRU=DSTWR -ADDR=1 -PADDR=0` arrancó el responder remoto y devolvió el volcado completo de parámetros FiRa — coincidiendo campo a campo con lo esperado (`STATIC_STS_IV: "01:02:03:04:05:06"`, `VENDOR_ID: "07:08"`, etc.).
-- Las notificaciones asíncronas del lado remoto (`SESSION_STATUS_NTF`, `SESSION_INFO_NTF`) quedaron capturadas dentro de la misma respuesta BLE del comando `RESPF` (confirma lo dicho en §2.3: el bridge no las descarta si llegan dentro de su ventana de captura).
+- `qorvo RESPF -CHAN=<N> -PCODE=10 -RRU=DSTWR -ADDR=1 -PADDR=0` arrancó el responder remoto y devolvió el volcado completo de parámetros FiRa — coincidiendo campo a campo con lo esperado (`STATIC_STS_IV: "01:02:03:04:05:06"`, `VENDOR_ID: "07:08"`, etc.), en canal 9 y en canal 5.
 - El lado local completó `SESSION_INIT` → `SESSION_SET_APP_CONFIG` (`Status.OK`, sin parámetros rechazados) → `RANGING_START` (`Status.OK`, sesión pasó a `ACTIVE`).
 
-**❌ No logrado — el ranging físico real:**
+**❌ No logrado, en las cuatro corridas — el ranging físico real:** ambos lados reportan timeout en cada ronda (remoto: `SESSION_INFO_NTF` con `status="RX_TIMEOUT"`; local: `TwrMeasurement` con `status=RANGING_RX_TIMEOUT`). Ninguna ronda devolvió una distancia real.
 
-- **Ambos lados** reportaron timeout en cada ronda: el lado remoto (`SESSION_INFO_NTF`) con `status="RX_TIMEOUT"` contra `mac_address=0x0000` (la placa local), y el lado local (`TwrMeasurement` decodificado de `RANGING_DATA_NTF`) con `status=RANGING_RX_TIMEOUT` contra `mac_address=00:01` (la placa remota). Ninguna ronda devolvió una distancia real.
-- El lado local dejó de recibir `RANGING_DATA_NTF` después de las primeras rondas (se observaron 3, no las ~40 esperadas en 8 s a 200 ms/ronda) — comportamiento distinto al de una sesión sin ningún par real (que sí sigue emitiendo una notificación por ronda de forma constante, ver `docs/referencia-comandos-uci.md` §4.1). Sugiere algún tipo de interacción a nivel MAC entre los dos dispositivos reales (colisión, backoff) que no se investigó en profundidad todavía.
+**Bitácora de las cuatro corridas:**
 
-**Segunda corrida (mismo día, con `STS_LENGTH=1` agregado tras leer la Tabla 7.7 del Developer Manual — ver §3):** resultado idéntico. Se descarta `STS_LENGTH` desalineado como causa única. El resto de los campos de la Tabla 7.7 para `BPRF4` (`SYNC PSR=64`, `SFD#=2`, `SFD Length=8`, `STS nr of Segments=1`) coinciden con lo que ya se tenía (`SFD_ID=2`) o son valores que ninguno de los dos lados fija explícitamente y que, al ser el default estándar de ambos firmwares para un solo segmento STS, no son sospechosos de estar desalineados.
+1. **Corrida 1** (parámetros mínimos + clave STS, canal 9): timeout en ambos lados. El lado local solo mostraba 3 rondas en 8s — resultó ser un bug propio (ver recuadro en §2.3), no una señal real del hardware.
+2. **Corrida 2** (+ `STS_LENGTH=1`, tras leer la Tabla 7.7 del Developer Manual): mismo resultado. Se descarta `STS_LENGTH` desalineado como causa única — el resto de los campos de esa tabla para `BPRF4` (`SYNC PSR=64`, `SFD#=2`, `SFD Length=8`, `STS nr of Segments=1`) ya coincidían o son defaults estándar compartidos.
+3. **Diagnóstico con `LISTENER`/`LSTAT`:** se puso el Qorvo remoto en modo sniffer (`qorvo LISTENER`) para ver si recibía **algo** por aire. **Hallazgo:** recibía tramas UWB constantes en canal 9 (una cada ~200-300 ms, `rsl`/`fsl` entre -70 y -85 dBm, contenido repetitivo) **antes incluso de que el lado local empezara a rangear** — hay tráfico ajeno real en ese canal, casi seguro de otras placas de la misma flota (`UWB-Node-1..9`) rangeando en simultáneo.
+4. **Corrida 3** (canal 5 en vez de 9, para evitar la interferencia detectada): mismo resultado — timeout en ambos lados. La interferencia en canal 9 es real pero **no es la causa** de este problema puntual (o no la única).
+5. **Corrida 4** (con el bug de `poll_notifications` corregido — ver §2.3): la corrida de 8s ahora sí mostró las ~45 rondas reales (antes solo 3), confirmando que el fix de observación funciona. **Pero las 45 rondas reales fueron igual de `RANGING_RX_TIMEOUT` que antes** — no era un problema de que "no veíamos" las rondas exitosas: genuinamente no hay ninguna.
 
-**Hipótesis para una próxima iteración, en orden de sospecha tras estos dos intentos:**
+**Conclusión hasta ahora:** se descartaron, con evidencia contra hardware real, distancia física, `STS_LENGTH`, interferencia de canal (al menos como causa única) y un bug real de observación del lado del cliente (ya corregido, mejora quede). El resto de los parámetros documentados (canal, preámbulo, RRU, timing, clave STS completa) coinciden byte a byte entre ambos lados. **La causa de fondo sigue sin identificarse.**
 
-1. **Distancia/obstrucción física real entre las dos placas** — no verificada en ninguna de las dos corridas. Dado que se descartó una desalineación de parámetros obvia (canal, preámbulo, RRU, timing, clave STS, longitud STS todos coinciden byte a byte con lo documentado), esta pasa a ser la hipótesis más probable: **confirmar que ambas placas estén físicamente cerca (unos pocos metros) y sin obstáculos entre sí al momento de la prueba** antes de seguir ajustando parámetros de software.
-2. Parámetros PHY más finos del perfil `BPRF4` no cubiertos por `App.defs` tal como se releva hasta ahora (tasa de datos PSDU, duración de preámbulo, tasa de PHR) — requeriría relevar `uwb-l1-configuration-*.pdf` del SDK para confirmar si son parámetros configurables por `SESSION_SET_APP_CONFIG` o fijos por el perfil PRF elegido a nivel de driver.
-3. `UWB_INITIATION_TIME`/otros parámetros de sincronización fina no controlados por ninguno de los dos lados explícitamente.
+**Hipótesis restantes para una próxima iteración:**
+
+1. Parámetros PHY más finos del perfil `BPRF4` no cubiertos por el subconjunto de `App.defs` que implementa este proyecto (tasa de datos PSDU, duración de preámbulo, tasa de PHR, modo PRF explícito) — requeriría relevar `uwb-l1-configuration-*.pdf`/`uwb-fira-protocol-*.pdf` del SDK para confirmar si son configurables por `SESSION_SET_APP_CONFIG` o quedan fijos por el perfil PRF a nivel de driver, y si el UCI firmware realmente iguala el perfil `BPRF4` de la CLI con los campos que sí controlamos.
+2. `UWB_INITIATION_TIME`/otros parámetros de sincronización fina no controlados explícitamente por ninguno de los dos lados.
+3. Alguna diferencia de comportamiento entre el motor FiRa tal como lo maneja el firmware CLI (vía "helpers API", llamada local) y el motor tal como lo maneja el firmware UCI (vía protocolo binario) que no sea puramente de configuración — es decir, que la premisa "ambos usan la misma uwb-stack, solo cambia la interfaz de control" (confirmada arquitectónicamente en el Developer Manual, ver `docs/plan-implementacion.md`) tenga alguna excepción no documentada.
+4. Interferencia de canal como factor agravante (no descartada del todo, solo como causa única) — repetir con la flota de otras placas apagada, si es posible coordinarlo.
 
 ## 5. Qué no se automatizó (tests)
 
