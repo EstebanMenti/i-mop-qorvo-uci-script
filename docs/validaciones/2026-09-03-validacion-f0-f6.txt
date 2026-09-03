@@ -1,0 +1,53 @@
+Reporte de validacion UCI - dwm3001c-uci
+========================================
+
+version del script: 0.1.0
+puerto: COM29
+firmware: UCI-FreeRTOS (QM33SDK-1.1.1)
+fecha: 2026-09-03 11:06:05
+
+Resultado: 11/11 checks OK
+
+[OK  ] CORE_RESET - Reinicia el dispositivo (payload 0x00).
+       esperado:  Status.OK
+       obtenido:  <Status.OK: 0>
+
+[OK  ] CORE_GET_DEVICE_INFO - Consulta version de UCI/MAC/PHY del dispositivo.
+       esperado:  status OK
+       obtenido:  DeviceInfo(status=<Status.OK: 0>, uci_version=VersionTriplet(major=2, minor=0, maintenance=0), mac_version=VersionTriplet(major=2, minor=0, maintenance=0), phy_version=VersionTriplet(major=2, minor=0, maintenance=0), uci_test_version=VersionTriplet(major=1, minor=1, maintenance=0), vendor_data=b'4\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00PV4X20\x0e\xe0\xca\t\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x03\xca\xde\x00')
+
+[OK  ] CORE_GET_CAPS - Consulta la lista de capacidades (sin decodificar el TLV).
+       esperado:  status OK
+       obtenido:  (<Status.OK: 0>, b'\x1a\x00\x02\x03\x01\x01\x02\xff\x00\x02\x04\x02\x00\x02\x00\x03\x04\x02\x00\x02\x00\x04\x01\x03\x05\x02\x03\x00\x06\x02\x1e\x00\x07\x01\x19\x08\x01\x03\t\x01\x02\n\x01\x02\x0b\x01\x01\x0c\x01\x01\r\x01\x01\x0e\x01\t\x0f\x01\n\x10\x01\x01\x11\x01?\x12\x05\x00\x00\x00\x00\x00\x13\x01\x00\x14\x01\x00\x15\x01\x00\x16\x01\x02\x17\x01\x00\x18\x01\x00\x19\x01\x00')
+
+[OK  ] SESSION_INIT - Crea una sesion de tipo RANGING con session_id=1.
+       esperado:  status OK
+       obtenido:  SessionInitResult(status=<Status.OK: 0>, session_handle=1)
+
+[OK  ] SESSION_GET_STATE - Consulta el estado de la sesion recien creada.
+       esperado:  status OK, SessionState.INIT
+       obtenido:  (<Status.OK: 0>, 0)
+
+[OK  ] SESSION_GET_COUNT (activa) - Cuenta de sesiones con la sesion todavia activa.
+       esperado:  status OK, count=1
+       obtenido:  (<Status.OK: 0>, 1)
+
+[OK  ] RANGING_GET_COUNT - Cuenta de mediciones de ranging antes de iniciar.
+       esperado:  status OK, count=0
+       obtenido:  (<Status.OK: 0>, 0)
+
+[OK  ] RANGING_START - Intenta iniciar ranging sobre una sesion sin configurar.
+       esperado:  Status.ERROR_SESSION_NOT_CONFIGURED (sesion sin SET_APP_CONFIG)
+       obtenido:  <Status.ERROR_SESSION_NOT_CONFIGURED: 21>
+
+[OK  ] RANGING_STOP - Detiene el intento de ranging anterior.
+       esperado:  Status.ERROR_SESSION_NOT_CONFIGURED (coherente con RANGING_START)
+       obtenido:  <Status.ERROR_SESSION_NOT_CONFIGURED: 21>
+
+[OK  ] SESSION_DEINIT - Elimina la sesion creada al principio de la corrida.
+       esperado:  Status.OK
+       obtenido:  <Status.OK: 0>
+
+[OK  ] SESSION_GET_COUNT (vacia) - Cuenta de sesiones tras eliminar la sesion.
+       esperado:  status OK, count=0
+       obtenido:  (<Status.OK: 0>, 0)
