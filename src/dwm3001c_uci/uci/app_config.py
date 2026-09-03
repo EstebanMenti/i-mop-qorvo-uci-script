@@ -46,6 +46,7 @@ PARAM_WIDTH_BYTES: dict[int, int] = {
     AppConfigParam.SCHEDULE_MODE: 1,
     AppConfigParam.VENDOR_ID: 2,
     AppConfigParam.STATIC_STS_IV: 6,
+    AppConfigParam.STS_LENGTH: 1,
 }
 
 AppConfigValue = int | Sequence[int]
