@@ -14,9 +14,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dwm3001c_uci.core.errors import UciPayloadError
-from dwm3001c_uci.uci.enums import Status
+from dwm3001c_uci.uci.enums import SessionState, Status
 
 MIN_DEVICE_INFO_PAYLOAD_SIZE = 9
+SESSION_INIT_RESPONSE_SIZE = 5
+SESSION_STATUS_NOTIFICATION_SIZE = 6
 
 
 @dataclass(frozen=True)
@@ -63,4 +65,61 @@ def parse_device_info(payload: bytes) -> DeviceInfo:
         phy_version=version_at(5),
         uci_test_version=version_at(7),
         vendor_data=bytes(payload[MIN_DEVICE_INFO_PAYLOAD_SIZE:]),
+    )
+
+
+@dataclass(frozen=True)
+class SessionInitResult:
+    """Respuesta decodificada de `SESSION_INIT` (GID=0x01, OID=0x00).
+
+    Layout confirmado contra `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/fira_msg.py`
+    (clase `SessionData.decode_fira`, release `QM33SDK-1.1.1`).
+    """
+
+    status: Status
+    session_handle: int
+
+
+def parse_session_init_result(payload: bytes) -> SessionInitResult:
+    """Decodifica el payload de una Response de `SESSION_INIT`."""
+    if len(payload) < SESSION_INIT_RESPONSE_SIZE:
+        raise UciPayloadError(
+            f"payload de SESSION_INIT de {len(payload)} bytes, "
+            f"se esperaban al menos {SESSION_INIT_RESPONSE_SIZE}"
+        )
+    return SessionInitResult(
+        status=Status(payload[0]),
+        session_handle=int.from_bytes(payload[1:5], "little"),
+    )
+
+
+@dataclass(frozen=True)
+class SessionStatusNotification:
+    """`SESSION_STATUS_NTF` decodificada (GID=0x01, OID=0x02).
+
+    Layout confirmado contra `fira_msg.py` (clase `SessionStatus`, mismo release).
+    `reason_code` se deja como entero crudo (no como `SessionStateChangeReason`)
+    porque `uci/enums.py` solo transcribe los motivos genericos (`0x00`-`0x05`):
+    el firmware puede legitimamente enviar codigos de error mas especificos que
+    ese enum todavia no cubre, y un `ValueError` al decodificar una notificacion
+    real seria peor que mostrar el valor crudo. Usar
+    `session_state_change_reason_name(reason_code)` para el nombre simbolico.
+    """
+
+    session_id: int
+    state: SessionState
+    reason_code: int
+
+
+def parse_session_status_notification(payload: bytes) -> SessionStatusNotification:
+    """Decodifica el payload de una notificacion `SESSION_STATUS_NTF`."""
+    if len(payload) < SESSION_STATUS_NOTIFICATION_SIZE:
+        raise UciPayloadError(
+            f"payload de SESSION_STATUS_NTF de {len(payload)} bytes, "
+            f"se esperaban al menos {SESSION_STATUS_NOTIFICATION_SIZE}"
+        )
+    return SessionStatusNotification(
+        session_id=int.from_bytes(payload[0:4], "little"),
+        state=SessionState(payload[4]),
+        reason_code=payload[5],
     )

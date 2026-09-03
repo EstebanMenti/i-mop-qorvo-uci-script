@@ -1,13 +1,20 @@
 """Protocolo UCI: framing y enums. Modulo puro, sin I/O (ver docs/arquitectura.md 3.2)."""
 
 from dwm3001c_uci.uci.enums import (
+    DeviceState,
     Gid,
     MessageType,
     OidCore,
     OidRanging,
     OidSession,
     OidTest,
+    SessionState,
+    SessionStateChangeReason,
+    SessionType,
     Status,
+    device_state_name,
+    session_state_change_reason_name,
+    status_name,
 )
 from dwm3001c_uci.uci.framing import (
     MAX_PAYLOAD_SIZE,
@@ -22,18 +29,25 @@ from dwm3001c_uci.uci.framing import (
 
 __all__ = [
     "MAX_PAYLOAD_SIZE",
+    "DeviceState",
     "Gid",
     "MessageType",
     "OidCore",
     "OidRanging",
     "OidSession",
     "OidTest",
+    "SessionState",
+    "SessionStateChangeReason",
+    "SessionType",
     "Status",
     "StreamDecoder",
     "UciFramingError",
     "UciMessage",
     "UciPacket",
     "decode_packet",
+    "device_state_name",
     "encode_packet",
+    "session_state_change_reason_name",
     "split_into_packets",
+    "status_name",
 ]

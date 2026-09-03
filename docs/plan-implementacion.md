@@ -45,11 +45,12 @@
 
 ## F4 — Cliente UCI: grupo `Session`
 
-- Extender `UciClient` con `session_init()`, `session_deinit()`, `set_app_config()`, `get_app_config()`, `get_session_state()`.
-- Parsear `SESSION_STATUS_NTF` y exponerlo vía el canal de notificaciones.
-- Confirmar contra la especificación (o contra el comportamiento observado en hardware) la máquina de estados relevante antes de codificarla como supuesto en el cliente — documentar hallazgos en `protocolo-uci.md`.
+- ✅ `UciClient` extendido con `session_init()`, `session_deinit()`, `get_session_state()`, `get_session_count()`. Notificaciones `SESSION_STATUS_NTF` parseadas (`core/models.py`, `parse_session_status_notification`) y capturadas en `UciClient.notifications` igual que las de `Core`.
+- **Pendiente:** `set_app_config()`, `get_app_config()`, `update_multicast_list()` y el resto de los OID de `Session` — su payload usa una codificación TVS genérica ligada a una tabla de parámetros de aplicación (`App.defs` en el SDK de referencia) que todavía no se relevó; queda para una iteración siguiente en vez de adivinar el formato.
+- **Hallazgo importante confirmado contra hardware real:** el `session_handle` que devuelve `SESSION_INIT` **puede ser distinto** del `session_id` que el host propuso en el comando (se probó pidiendo `session_id=7` y el firmware asignó `session_handle=1`). Todos los comandos posteriores de `Session` (`GET_STATE`, `DEINIT`, ...) deben usar el `session_handle` devuelto, no el `session_id` original — usar el original devuelve `Status.ERROR_SESSION_NOT_EXIST`. Por eso `session_deinit()`/`get_session_state()` en `core/client.py` toman un parámetro `session_handle`, no `session_id`. Esto contradice la suposición implícita del cliente Python de referencia de Qorvo (`fira.py`), que reutiliza la misma variable `sid` para todo — no se debe copiar ese supuesto sin verificar.
+- También se confirmó que `CORE_RESET` limpia sesiones activas (emite `SESSION_STATUS_NTF` a `DEINIT` para cualquier sesión colgada de una corrida anterior).
 
-**Aceptación:** se puede inicializar una sesión contra hardware real y observar la transición de estado esperada vía `SESSION_STATUS_NTF`.
+**Aceptación:** ✅ validado contra hardware real: `session_init()` → `Status.OK`, `get_session_state(handle)` → `Status.OK` con `SessionState.INIT`, `get_session_count()` refleja la sesión activa (1) y luego su ausencia (0) tras `session_deinit(handle)`. Se capturan las 2 notificaciones `SESSION_STATUS_NTF` esperadas (`INIT` y `DEINIT`), con `reason_code=0` (`STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS`), coincidiendo con `SessionState`/`SessionStateChangeReason` de `uci/enums.py`.
 
 ## F5 — Cliente UCI: grupo `Ranging`
 

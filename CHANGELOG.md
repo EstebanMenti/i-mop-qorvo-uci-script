@@ -15,6 +15,8 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 - Valores exactos de `Status` corregidos en `docs/protocolo-uci.md` tras verificarlos por lectura directa de la fuente del SDK (algunos códigos habían quedado mal estimados en el resumen inicial).
 - Cliente UCI de alto nivel, grupo `Core` (fase F3): `UciClient.reset()`, `get_device_info()`, `get_caps_raw()`, con correlación comando↔respuesta, timeout configurable y captura de notificaciones intercaladas (`core/client.py`, `core/models.py`, `core/errors.py`).
 - Baud rate del transporte serie (115200) confirmado para firmware UCI (antes marcado `[Sin confirmar]`), y validación de extremo a extremo contra una placa DWM3001CDK real: `reset()`, `get_device_info()` y `get_caps_raw()` funcionando contra hardware.
+- Cliente UCI de alto nivel, grupo `Session` (fase F4): `UciClient.session_init()`, `session_deinit(session_handle)`, `get_session_state(session_handle)`, `get_session_count()`, con `SESSION_STATUS_NTF` parseada y capturada como el resto de las notificaciones. Enums `SessionType`, `SessionState`, `SessionStateChangeReason`, `DeviceState` agregados a `uci/enums.py`, confirmados contra la fuente del SDK.
+- Validación de extremo a extremo del grupo `Session` contra hardware real: ciclo completo `session_init` → `get_session_state` → `get_session_count` → `session_deinit` → `get_session_count`, con las notificaciones `SESSION_STATUS_NTF` esperadas. Hallazgo documentado en `docs/protocolo-uci.md`: el `session_handle` que devuelve `SESSION_INIT` puede ser distinto del `session_id` solicitado — por eso `session_deinit()`/`get_session_state()` reciben explícitamente `session_handle`, no `session_id`.
 
 ### Fixed
 

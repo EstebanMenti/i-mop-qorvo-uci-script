@@ -134,6 +134,71 @@ class Status(IntEnum):
     UNKNOWN = 0xFF
 
 
+class SessionType(IntEnum):
+    """Tipo de sesion, parametro de `SESSION_INIT` (confirmado contra `fira_enums.py`)."""
+
+    RANGING = 0x00
+    RANGING_AND_DATA = 0x01
+    DATA = 0x02
+    RANGING_PHASE = 0x03
+    DATA_PHASE = 0x04
+    RANGING_AND_DATA_PHASE = 0x05
+    HUS_PRIMARY_SESSION = 0x9F
+    DEVICE_TEST_MODE = 0xD0
+
+
+class SessionState(IntEnum):
+    """Estado de una sesion, payload de `SESSION_STATUS_NTF` y de `SESSION_GET_STATE`."""
+
+    INIT = 0x00
+    DEINIT = 0x01
+    ACTIVE = 0x02
+    IDLE = 0x03
+
+
+class SessionStateChangeReason(IntEnum):
+    """Motivo de un cambio de estado de sesion, segundo campo de `SESSION_STATUS_NTF`.
+
+    Confirmado contra `fira_enums.py`. Solo se listan los valores genericos
+    (`0x00`-`0x05`); el resto del rango documentado en esa fuente (errores de
+    configuracion muy especificos de FiRa 2.0) no esta transcripto aqui para no
+    duplicar una tabla larga que este proyecto todavia no necesita — agregar
+    valores puntuales aqui a medida que se observen en las notificaciones
+    reales de la placa, citando la fuente.
+    """
+
+    STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS = 0x00
+    MAX_RANGING_ROUND_RETRY_COUNT_REACHED = 0x01
+    MAX_NUMBER_OF_MEASUREMENT_REACHED = 0x02
+    SESSION_SUSPENDED_DUE_TO_INBAND_SIGNAL = 0x03
+    SESSION_RESUMED_DUE_TO_INBAND_SIGNAL = 0x04
+    SESSION_STOPPED_DUE_TO_INBAND_SIGNAL = 0x05
+
+
+def session_state_change_reason_name(value: int) -> str:
+    """Nombre simbolico de un motivo de cambio de estado, con fallback seguro."""
+    try:
+        return SessionStateChangeReason(value).name
+    except ValueError:
+        return f"UNKNOWN_REASON(0x{value:02X})"
+
+
+class DeviceState(IntEnum):
+    """Estado del dispositivo, payload de `CORE_DEVICE_STATUS_NTF` (confirmado)."""
+
+    READY = 0x01
+    ACTIVE = 0x02
+    ERROR = 0xFF
+
+
+def device_state_name(value: int) -> str:
+    """Nombre simbolico de un estado de dispositivo, con fallback seguro."""
+    try:
+        return DeviceState(value).name
+    except ValueError:
+        return f"UNKNOWN_DEVICE_STATE(0x{value:02X})"
+
+
 def status_name(value: int) -> str:
     """Nombre simbolico de un codigo de status, con fallback seguro.
 

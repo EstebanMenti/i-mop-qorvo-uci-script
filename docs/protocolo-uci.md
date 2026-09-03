@@ -59,6 +59,15 @@ Los siguientes formatos de payload están confirmados tanto contra `fira.py`/`fi
 | `CORE_RESET` | **1 byte**: `0x00` (tipo de reset). Un payload vacío devuelve `Status.SYNTAX_ERROR` — confirmado contra hardware real, no es un valor opcional. | 1 byte: `Status`. |
 | `CORE_GET_DEVICE_INFO` | Vacío. | `Status` (1) + `uci_version` (2: major, minor\|maintenance en nibbles) + `mac_version` (2) + `phy_version` (2) + `uci_test_version` (2) + resto: datos específicos de Qorvo sin decodificar (`vendor_data`, ver [§6](#6-extensiones-propietarias-de-qorvo)). |
 | `CORE_GET_CAPS` | Vacío. | `Status` (1) + lista TLV de parámetros de capacidad (tag 1 byte, longitud 1 byte, valor). **No se decodifica todavía** — `get_caps_raw()` devuelve `(Status, bytes)` sin parsear la lista (ver `docs/plan-implementacion.md` F3). |
+| `SESSION_INIT` | `session_id` (4 bytes LE, elegido por el host) + `session_type` (1 byte, ver `SessionType`). | `Status` (1) + `session_handle` (4 bytes LE). Ver advertencia abajo. |
+| `SESSION_DEINIT` | `session_handle` (4 bytes LE). | `Status` (1). |
+| `SESSION_GET_STATE` | `session_handle` (4 bytes LE). | `Status` (1) + `SessionState` (1). |
+| `SESSION_GET_COUNT` | Vacío. | `Status` (1) + cantidad de sesiones (1). |
+| `SESSION_STATUS_NTF` (notificación) | — | `session_id`/`session_handle` (4 bytes LE) + `SessionState` (1) + código de motivo (1, ver `SessionStateChangeReason`). |
+
+> **Advertencia confirmada contra hardware real — `session_handle` puede diferir de `session_id`:** al pedir `SESSION_INIT` con `session_id=7`, el firmware devolvió `session_handle=1`. Usar despues ese `7` (el id original) en `SESSION_GET_STATE`/`SESSION_DEINIT` devuelve `Status.ERROR_SESSION_NOT_EXIST`; hay que usar el `session_handle` de la Response de `SESSION_INIT`. El cliente Python de referencia de Qorvo (`fira.py`) no hace esta distinción — reutiliza la misma variable `sid` en todos los métodos, asumiendo implícitamente que son iguales — por lo que **no se debe copiar ese supuesto sin verificar**. `src/dwm3001c_uci/core/client.py` ya reflejó esto: `session_deinit()`/`get_session_state()` reciben `session_handle`, no `session_id`.
+>
+> También se confirmó que `CORE_RESET` limpia sesiones activas colgadas de una corrida anterior, emitiendo `SESSION_STATUS_NTF` (estado `DEINIT`) por cada una.
 
 ## 3. Notificaciones a manejar de forma asíncrona
 
