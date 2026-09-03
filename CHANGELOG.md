@@ -25,6 +25,12 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 - Parseo del header de `RANGING_DATA_NTF` (`core/models.py::parse_ranging_data_notification`, `RangingMeasType` en `uci/enums.py`) — resuelve el `[Sin confirmar]` de F5: confirmado contra hardware real que el firmware emite esta notificación en cada ronda de ranging, incluso sin un segundo dispositivo. Las mediciones individuales dentro de la notificación quedan sin decodificar.
 - **Ranging real confirmado contra hardware** (una sola placa, sin par): con la sesión configurada, `ranging_start()` devuelve `Status.OK`, el estado de sesión pasa a `ACTIVE`, y se reciben `RANGING_DATA_NTF` reales en cada ronda. Máquina de estados de sesión confirmada de punta a punta: `INIT` → (`SET_APP_CONFIG`) → `IDLE` → (`RANGING_START`) → `ACTIVE` → (`RANGING_STOP`) → `IDLE` → (`SESSION_DEINIT`) → `DEINIT`.
 - **Hallazgo confirmado contra hardware:** los 5 parámetros que `run_fira_twr.py` del SDK etiqueta como "Fira Mandatory/minimal session config" no alcanzan para desbloquear `RANGING_START` (el firmware sigue devolviendo `Status.ERROR_SESSION_NOT_CONFIGURED`); hacen falta 9 parámetros adicionales de timing/PHY, documentados en `docs/protocolo-uci.md` §2.2.
+- `docs/referencia-comandos-uci.md`: referencia completa de los 11 comandos implementados — qué hace cada uno, bytes reales de request/response, y el significado de cada parámetro (incluida la tabla de los 15 parámetros de `session_set_app_config()`).
+
+### Changed
+
+- Auditoría completa de la documentación contra el estado real del código (`README.md`, `CLAUDE.md`, `docs/arquitectura.md`): corregidas referencias obsoletas que describían el proyecto como "todavía sin implementar" (F0-F6 ya estaban completos), inventario de módulos desactualizado (`uci/codec.py` nunca existió; los modelos de datos por comando viven en `core/models.py`), lista de excepciones y de métodos de `UciClient` desactualizada, y el baud rate que seguía marcado `[Sin confirmar]` pese a estar confirmado desde F1.
+- Investigado si el banco BLE (`UWB-Node-N`) del proyecto hermano `i-mop-qorvo-CLI-script` podía usarse como segunda placa para ranging real: **no sirve tal cual** — corre firmware CLI de texto sobre un puente nRF52840 (protocolo Nordic UART Service, no framing UCI), y su USB queda inaccesible mientras esté montada en ese puente. Documentado en `docs/plan-implementacion.md` ("Trabajo futuro") y `CLAUDE.md` §1.2.
 
 ### Fixed
 
