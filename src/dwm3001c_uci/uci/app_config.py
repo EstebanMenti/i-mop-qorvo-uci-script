@@ -34,6 +34,7 @@ PARAM_WIDTH_BYTES: dict[int, int] = {
     AppConfigParam.STS_CONFIG: 1,
     AppConfigParam.MULTI_NODE_MODE: 1,
     AppConfigParam.CHANNEL_NUMBER: 1,
+    AppConfigParam.NUMBER_OF_CONTROLEES: 1,
     AppConfigParam.DEVICE_MAC_ADDRESS: 2,
     AppConfigParam.DST_MAC_ADDRESS: 2,
     AppConfigParam.SLOT_DURATION: 2,

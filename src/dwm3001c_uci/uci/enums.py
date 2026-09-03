@@ -160,13 +160,14 @@ class AppConfigParam(IntEnum):
     falta ademas de los 5 "mandatory" para que `RANGING_START` deje de
     devolver `Status.ERROR_SESSION_NOT_CONFIGURED` (con solo los 5 originales
     el firmware acepta cada parametro individualmente pero el gate de sesion
-    configurada no se levanta), mas 7 parametros adicionales
-    (`AOA_RESULT_REQ`, `RESULT_REPORT_CONFIG`, `UWB_INITIATION_TIME`,
-    `HOPPING_MODE`, `BLOCK_STRIDE_LENGTH`, `RSSI_REPORTING`,
-    `MAX_NUMBER_OF_MEASUREMENTS`) agregados para alcanzar paridad completa
-    con la lista de `app_configs` que arma `run_fira_twr.py` en cada corrida
-    -- ver `core/client.py::session_set_app_config`. Ver `uci/app_config.py`
-    y docs/protocolo-uci.md.
+    configurada no se levanta), mas `NUMBER_OF_CONTROLEES` y 7 parametros
+    adicionales (`AOA_RESULT_REQ`, `RESULT_REPORT_CONFIG`,
+    `UWB_INITIATION_TIME`, `HOPPING_MODE`, `BLOCK_STRIDE_LENGTH`,
+    `RSSI_REPORTING`, `MAX_NUMBER_OF_MEASUREMENTS`) agregados para alcanzar
+    paridad completa con la lista de `app_configs` que arma `run_fira_twr.py`
+    (SDK) y `uwb-qorvo-tools` (proyecto hermano, ranging real confirmado) en
+    cada corrida -- ver `core/client.py::session_set_app_config`. Ver
+    `uci/app_config.py` y docs/protocolo-uci.md.
     """
 
     DEVICE_TYPE = 0x00
@@ -174,6 +175,7 @@ class AppConfigParam(IntEnum):
     STS_CONFIG = 0x02
     MULTI_NODE_MODE = 0x03
     CHANNEL_NUMBER = 0x04
+    NUMBER_OF_CONTROLEES = 0x05
     DEVICE_MAC_ADDRESS = 0x06
     DST_MAC_ADDRESS = 0x07
     SLOT_DURATION = 0x08

@@ -102,10 +102,11 @@ def test_encode_app_config_matches_real_capture_with_sts_key_and_length() -> Non
 
 
 TVS_BLOCK_WITH_QORVO_REFERENCE_PARITY_PARAMS = bytes.fromhex(
-    "19"
+    "1a"
     "00 01 01"
     "11 01 01"
     "03 01 00"
+    "05 01 01"
     "01 01 02"
     "06 02 00 00"
     "07 02 01 00"
@@ -133,8 +134,9 @@ TVS_BLOCK_WITH_QORVO_REFERENCE_PARITY_PARAMS = bytes.fromhex(
 
 def test_encode_app_config_matches_qorvo_reference_parity_params() -> None:
     # Igual que test_encode_app_config_matches_real_capture_with_sts_key_and_length,
-    # mas los 7 parametros agregados a session_set_app_config para paridad con
-    # run_fira_twr.py del SDK (AOA_RESULT_REQ, RESULT_REPORT_CONFIG,
+    # mas NUMBER_OF_CONTROLEES y los 7 parametros agregados a
+    # session_set_app_config para paridad con run_fira_twr.py del SDK y con
+    # uwb-qorvo-tools (AOA_RESULT_REQ, RESULT_REPORT_CONFIG,
     # UWB_INITIATION_TIME, HOPPING_MODE, BLOCK_STRIDE_LENGTH, RSSI_REPORTING,
     # MAX_NUMBER_OF_MEASUREMENTS). No es una captura de hardware: los
     # tags/anchos vienen de fira_app.py del SDK (ver uci/app_config.py); el
@@ -144,6 +146,7 @@ def test_encode_app_config_matches_qorvo_reference_parity_params() -> None:
         (AppConfigParam.DEVICE_TYPE, 1),
         (AppConfigParam.DEVICE_ROLE, 1),
         (AppConfigParam.MULTI_NODE_MODE, 0),
+        (AppConfigParam.NUMBER_OF_CONTROLEES, 1),
         (AppConfigParam.RANGING_ROUND_USAGE, 2),
         (AppConfigParam.DEVICE_MAC_ADDRESS, 0x0000),
         (AppConfigParam.DST_MAC_ADDRESS, [0x0001]),

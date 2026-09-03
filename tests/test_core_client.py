@@ -228,14 +228,14 @@ def test_ranging_stop_sends_expected_command() -> None:
     assert status == Status.ERROR_SESSION_NOT_CONFIGURED
 
 
-# SESSION_SET_APP_CONFIG con los 25 parametros que envia
+# SESSION_SET_APP_CONFIG con los 26 parametros que envia
 # core/client.py::session_set_app_config (paridad con run_fira_twr.py del
-# SDK, ver docstring de ese metodo), y RANGING_START ya con la sesion
-# configurada. session_handle=1.
+# SDK y con uwb-qorvo-tools, ver docstring de ese metodo), y RANGING_START ya
+# con la sesion configurada. session_handle=1.
 #
 # REAL_SET_APP_CONFIG_TX no es una captura de hardware: se computo llamando a
 # `encode_app_config` con los mismos tags/valores que envia el cliente (los
-# tags/anchos de los 7 parametros nuevos estan confirmados contra
+# tags/anchos de los parametros nuevos estan confirmados contra
 # `fira_app.py` del SDK, ver uci/app_config.py), para evitar errores de
 # transcripcion manual de bytes largos (ver historial de este proyecto).
 # REAL_SET_APP_CONFIG_RX SI es la captura real contra hardware del conjunto
@@ -246,11 +246,11 @@ def test_ranging_stop_sends_expected_command() -> None:
 # nuevos sin rechazar ninguno: pendiente de re-confirmar en la proxima
 # corrida contra hardware real (ver docs/ranging-mixto-cli-uci.md).
 REAL_SET_APP_CONFIG_TX = bytes.fromhex(
-    "21 03 00 64 01 00 00 00 19 00 01 01 11 01 01 03 01 00 01 01 02 06 02 00 00 "
-    "07 02 01 00 04 01 09 02 01 00 12 01 03 22 01 01 14 01 0a 15 01 02 08 02 60 "
-    "09 09 04 c8 00 00 00 1b 01 19 27 02 08 07 28 06 01 02 03 04 05 06 35 01 01 "
-    "0d 01 01 2e 01 0b 2b 08 00 00 00 00 00 00 00 00 2c 01 00 2d 01 00 13 01 00 "
-    "32 02 00 00"
+    "21 03 00 67 01 00 00 00 1a 00 01 01 11 01 01 03 01 00 05 01 01 01 01 02 "
+    "06 02 00 00 07 02 01 00 04 01 09 02 01 00 12 01 03 22 01 01 14 01 0a 15 "
+    "01 02 08 02 60 09 09 04 c8 00 00 00 1b 01 19 27 02 08 07 28 06 01 02 03 "
+    "04 05 06 35 01 01 0d 01 01 2e 01 0b 2b 08 00 00 00 00 00 00 00 00 2c 01 "
+    "00 2d 01 00 13 01 00 32 02 00 00"
 )
 REAL_SET_APP_CONFIG_RX = bytes.fromhex("41 03 00 02 00 00 61 02 00 06 01 00 00 00 03 00")
 

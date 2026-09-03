@@ -252,6 +252,12 @@ class UciClient:
           documentado en `docs/ranging-mixto-cli-uci.md` -- se agregan para
           alcanzar paridad con la implementacion de referencia de Qorvo y
           descartar (o confirmar) esa hipotesis contra hardware real.
+        - `NUMBER_OF_CONTROLEES`: agregado como `len(dst_mac_addresses)` (no
+          es un parametro nuevo del metodo). Confirmado como necesario --
+          no solo recomendado -- contra un proyecto hermano independiente
+          (`uwb-qorvo-tools`, Raspberry Pi + UCI local + CLI remoto por BLE,
+          con ranging real medido con exito) que lo fija explicitamente en
+          cada sesion unicast.
 
         No soporta el resto de los parametros de `App.defs` (STS
         provisionado/con clave, diagnosticos Qorvo, DL-TDoA, ...).
@@ -265,13 +271,15 @@ class UciClient:
         confirmar en la proxima corrida contra hardware real. Ver
         docs/plan-implementacion.md.
         """
+        dst_mac_addresses_list = list(dst_mac_addresses)
         params: list[tuple[int, int | Sequence[int]]] = [
             (AppConfigParam.DEVICE_TYPE, int(device_type)),
             (AppConfigParam.DEVICE_ROLE, int(device_role)),
             (AppConfigParam.MULTI_NODE_MODE, int(multi_node_mode)),
+            (AppConfigParam.NUMBER_OF_CONTROLEES, len(dst_mac_addresses_list)),
             (AppConfigParam.RANGING_ROUND_USAGE, int(ranging_round_usage)),
             (AppConfigParam.DEVICE_MAC_ADDRESS, device_mac_address),
-            (AppConfigParam.DST_MAC_ADDRESS, list(dst_mac_addresses)),
+            (AppConfigParam.DST_MAC_ADDRESS, dst_mac_addresses_list),
             (AppConfigParam.CHANNEL_NUMBER, channel_number),
             (AppConfigParam.STS_CONFIG, sts_config),
             (AppConfigParam.RFRAME_CONFIG, rframe_config),
