@@ -9,7 +9,13 @@ import pytest
 
 from dwm3001c_uci.core.client import UciClient
 from dwm3001c_uci.core.errors import UciTimeoutError
-from dwm3001c_uci.uci.enums import SessionState, SessionType, Status
+from dwm3001c_uci.uci.enums import (
+    DeviceRole,
+    DeviceType,
+    SessionState,
+    SessionType,
+    Status,
+)
 from tests.fakes import FakeTransport
 
 # CORE_GET_DEVICE_INFO: TX real y RX real (1 sola Response, sin notificaciones).
@@ -220,3 +226,57 @@ def test_ranging_stop_sends_expected_command() -> None:
 
     assert transport.tx_log == [REAL_RANGING_STOP_TX]
     assert status == Status.ERROR_SESSION_NOT_CONFIGURED
+
+
+# SESSION_SET_APP_CONFIG con el conjunto minimo de parametros, y RANGING_START
+# ya con la sesion configurada: capturas reales contra hardware, session_handle=1.
+# A diferencia de los fixtures de arriba (sesion nunca configurada), aca
+# RANGING_START devuelve Status.OK y el firmware emite RANGING_DATA_NTF real.
+REAL_SET_APP_CONFIG_TX = bytes.fromhex(
+    "21 03 00 38 01 00 00 00 0f 00 01 01 11 01 01 03 01 00 01 01 02 06 02 00 00 "
+    "07 02 01 00 04 01 09 02 01 00 12 01 03 22 01 01 14 01 0a 15 01 02 08 02 60 "
+    "09 09 04 c8 00 00 00 1b 01 19"
+)
+REAL_SET_APP_CONFIG_RX = bytes.fromhex("41 03 00 02 00 00 61 02 00 06 01 00 00 00 03 00")
+
+REAL_RANGING_START_CONFIGURED_TX = bytes.fromhex("22 00 00 04 01 00 00 00")
+REAL_RANGING_START_CONFIGURED_RX = bytes.fromhex(
+    "42 00 00 01 00 60 01 00 01 02 61 02 00 06 01 00 00 00 02 00 62 00 00 38 00 "
+    "00 00 00 01 00 00 00 00 c8 00 00 00 01 00 00 00 00 00 00 00 00 00 00 01 01 "
+    "00 21 ff ff ff 00 00 00 00 00 00 00 00 00 00 00 00 02 00 00 00 00 00 00 00 "
+    "00 00 00 00 00 62 00 00 38 01 00 00 00 01 00 00 00 00 c8 00 00 00 01 00 00 "
+    "00 00 00 00 00 00 00 00 01 01 00 21 ff ff ff 00 00 00 00 00 00 00 00 00 00 "
+    "00 00 02 00 00 00 00 00 00 00 00 00 00 00 00"
+)
+
+
+def test_session_set_app_config_sends_expected_tvs_and_returns_ok() -> None:
+    transport = FakeTransport(rx_data=REAL_SET_APP_CONFIG_RX)
+    client = UciClient(transport)
+
+    result = client.session_set_app_config(
+        session_handle=1,
+        device_type=DeviceType.CONTROLLER,
+        device_role=DeviceRole.INITIATOR,
+        device_mac_address=0x0000,
+        dst_mac_addresses=[0x0001],
+    )
+
+    assert transport.tx_log == [REAL_SET_APP_CONFIG_TX]
+    assert result.status == Status.OK
+    assert result.rejected == ()
+
+
+def test_ranging_start_on_configured_session_returns_ok_and_captures_ranging_data() -> None:
+    transport = FakeTransport(rx_data=REAL_RANGING_START_CONFIGURED_RX)
+    client = UciClient(transport)
+
+    status = client.ranging_start(session_handle=1)
+
+    assert transport.tx_log == [REAL_RANGING_START_CONFIGURED_TX]
+    assert status == Status.OK
+
+    ranging_data_notifications = [
+        n for n in client.notifications if n.gid == 0x02 and n.oid == 0x00
+    ]
+    assert len(ranging_data_notifications) == 2
