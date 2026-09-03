@@ -24,8 +24,8 @@ La **calibración de retardo de antena** (objetivo 2 de la herramienta CLI herma
 ### 1.2 Hardware del banco de pruebas
 
 - Una o dos placas **DWM3001CDK** conectadas por USB a la misma PC (Windows). Cada placa expone un puerto COM virtual (USB CDC ACM).
-- **Parámetros de puerto serie:** a confirmar contra la documentación del target `*-UCI-FreeRTOS.hex` — **no asumir** que son los mismos que usa el firmware CLI (115200 8N1). Ver tarea de verificación en [docs/plan-implementacion.md, fase F1](docs/plan-implementacion.md#f1--transporte-serie).
-- Dos placas permiten probar una sesión de ranging real entre un dispositivo `Controller`/`Initiator` y uno `Controlee`/`Responder`.
+- **Parámetros de puerto serie:** confirmados — **115200 8N1** (ver [docs/protocolo-uci.md §5](docs/protocolo-uci.md#5-transporte)). No es una suposición por analogía con el firmware CLI: se verificó contra la fuente del SDK y contra hardware real.
+- Dos placas permiten probar una sesión de ranging real entre un dispositivo `Controller`/`Initiator` y uno `Controlee`/`Responder` — **todavía no disponible en este proyecto** (solo se probó con una placa). **No usar** las placas del banco BLE (`UWB-Node-N`) del proyecto hermano `i-mop-qorvo-CLI-script` como segunda placa: corren firmware CLI de texto sobre un puente nRF52840 (protocolo NUS, no UCI), y su USB queda inaccesible mientras estén montadas en ese puente. Hace falta una placa DWM3001CDK adicional y dedicada, con firmware UCI y conexión USB directa — ver detalle en [docs/plan-implementacion.md, "Trabajo futuro"](docs/plan-implementacion.md#trabajo-futuro-fuera-de-este-plan).
 
 ### 1.3 Documentación de referencia (leerla antes de tocar la lógica del protocolo)
 
@@ -35,6 +35,7 @@ La **calibración de retardo de antena** (objetivo 2 de la herramienta CLI herma
 | UWB FiRa Protocol | `SDK/Documentation/uwb-stack/uwb-fira-protocol-*.pdf` | Especificación FiRa en la que se basa UCI: máquina de estados de sesión, parámetros de ranging. |
 | DWM3001CDK Developer Manual | `SDK/Documentation/DeveloperManual/DWM3001CDK_Developer_Manual_QM33SDK-1.1.1.pdf` | Documenta la interfaz **CLI** de texto, no UCI — útil solo para contexto de hardware/puesta en marcha de la placa. |
 | Resumen de protocolo relevado para este proyecto | [docs/protocolo-uci.md](docs/protocolo-uci.md) | Framing, tablas de GID/OID y códigos de estado ya extraídos y resumidos, con cita de la fuente. |
+| Referencia de comandos probados | [docs/referencia-comandos-uci.md](docs/referencia-comandos-uci.md) | Qué hace cada comando ya implementado, qué se envía/responde (bytes reales) y qué significa cada parámetro. |
 | Índice de referencias del fabricante | [docs/referencias/README.md](docs/referencias/README.md) | Dónde conseguir cada PDF y qué versión del SDK corresponde. |
 
 **Regla:** ante cualquier duda sobre el protocolo (estructura de un mensaje, parámetros válidos, condiciones de un comando), la referencia es la especificación oficial de mensajes UCI. **No inventar comportamiento del firmware ni del protocolo.** Si algo no está confirmado contra la documentación oficial o contra hardware real, marcarlo **`[Sin confirmar]`** en la documentación y en los comentarios de código, y proponer cómo verificarlo.
@@ -64,7 +65,7 @@ La **calibración de retardo de antena** (objetivo 2 de la herramienta CLI herma
 - **Docstrings:** obligatorios en módulos, clases y funciones públicas, **en español**, formato Google. Los identificadores (variables, funciones, clases, módulos) van **en inglés**.
 - **Comentarios:** en español, solo para explicar restricciones no evidentes del protocolo (p. ej. "el firmware exige reensamblar por PBF antes de parsear"), nunca para narrar lo que el código ya dice.
 - **Logging:** módulo `logging` (nunca `print` fuera de la capa `app/`). Todo el tráfico serie crudo (TX y RX, en hexadecimal) debe poder registrarse en archivo para diagnóstico — es la única forma de depurar un protocolo binario.
-- **Errores:** jerarquía de excepciones propia con base `UciError` (p. ej. `UciTimeoutError`, `UciStatusError`, `UciFramingError`). Nunca capturar `Exception` sin re-lanzar o registrar. Un error de `Status` distinto de `OK` en una respuesta debe reportarse con el nombre simbólico del código (no solo el valor numérico).
+- **Errores:** jerarquía de excepciones propia con base `UciError` en `core/errors.py` (`UciTimeoutError`, `UciPayloadError`, `UciStatusError`). `UciFramingError` es una excepción aparte, definida en `uci/framing.py` — no hereda de `UciError` porque pertenece a la capa `uci/`, no a `core/` (ver regla de dependencia unidireccional en la Sección 3). Nunca capturar `Exception` sin re-lanzar o registrar. Un error de `Status` distinto de `OK` en una respuesta debe reportarse con el nombre simbólico del código (no solo el valor numérico) — usar `status_name()`/`session_state_change_reason_name()`/`device_state_name()` de `uci/enums.py`, que devuelven un nombre legible incluso para un valor no enumerado, en vez de lanzar `ValueError`.
 - **Sin efectos colaterales peligrosos:** ninguna función debe enviar un comando que altere estado persistente del dispositivo sin que eso sea su propósito explícito y esté a la vista en su nombre.
 
 ### 2.3 Testing
@@ -76,7 +77,7 @@ La **calibración de retardo de antena** (objetivo 2 de la herramienta CLI herma
 
 ### 2.4 Dependencias
 
-- Mínimas y justificadas. Base prevista: `pyserial` (transporte), `typer` (CLI), `rich` (salida en consola/reportes). Evaluar `pyyaml` si la suite de validación usa specs declarativas en YAML. Dev: `pytest`, `ruff`, `mypy`.
+- Mínimas y justificadas. Runtime: `pyserial` (transporte). `typer`/`rich` están declaradas para la CLI (fase F7, todavía no implementada — ver `docs/plan-implementacion.md`). La suite de validación (`validation/`) se implementó con specs declaradas en Python puro (`CommandSpec`, dataclasses), no en YAML — no hizo falta `pyyaml`. Dev: `pytest`, `ruff`, `mypy`, `types-pyserial`.
 - No agregar dependencias nuevas sin justificarlo en el pull request.
 - **No copiar código fuente del SDK de Qorvo** (p. ej. la librería Python `SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/` del release QM33SDK-1.1.1) hacia este repositorio. Esos archivos llevan la licencia propietaria `LicenseRef-QORVO-2` y **no está confirmado que permita redistribución o derivación** fuera del propio SDK. Usarla únicamente como **referencia de diseño** (para entender el framing y las tablas de GID/OID) y reimplementar de forma independiente en este proyecto. Ante cualquier duda de licenciamiento, consultar antes de portar código.
 
@@ -91,21 +92,24 @@ i-mop-qorvo-uci-script/
 ├── LICENSE                    ← uso interno / propietario
 ├── CHANGELOG.md               ← historial de versiones (Keep a Changelog)
 ├── .gitignore
-├── pyproject.toml             ← (a crear en la fase F0, ver plan de implementación)
+├── pyproject.toml             ← metadatos, dependencias, config de ruff/mypy/pytest
 ├── docs/                      ← documentación del proyecto (ver docs/README.md)
 │   ├── README.md              ← índice de la documentación
 │   ├── arquitectura.md        ← diseño del software
 │   ├── protocolo-uci.md       ← resumen del protocolo UCI relevado del SDK
+│   ├── referencia-comandos-uci.md ← qué hace cada comando, bytes reales, parámetros
 │   ├── plan-implementacion.md ← plan de implementación por fases
 │   ├── versionado.md          ← política de versionado y releases
+│   ├── resultados-validacion.md ← actas de campañas de validación contra hardware real
+│   ├── validaciones/          ← evidencia cruda (reportes fechados) de esas campañas
 │   └── referencias/           ← índice de documentos oficiales del fabricante
 ├── src/
-│   └── dwm3001c_uci/          ← paquete Python principal (a crear)
+│   └── dwm3001c_uci/          ← paquete Python principal
 │       ├── transport/         ← capa serie: descubrimiento de puertos, lectura/escritura de bytes
-│       ├── uci/                ← framing UCI, enums (GID/OID/Status), codec de payload
-│       ├── core/               ← cliente UCI de alto nivel (comandos, correlación cmd↔resp, notificaciones)
+│       ├── uci/                ← framing UCI, enums (GID/OID/Status/...), codec TVS de AppConfig
+│       ├── core/               ← cliente UCI de alto nivel (comandos, correlación cmd↔resp, notificaciones, modelos de datos)
 │       ├── validation/         ← suite de validación declarativa + runner + reporte
-│       └── app/                ← puntos de entrada de línea de comandos (Typer)
+│       └── app/                ← puntos de entrada de línea de comandos (Typer) — **pendiente, fase F7**
 └── tests/                     ← tests pytest (sin hardware por defecto)
 ```
 

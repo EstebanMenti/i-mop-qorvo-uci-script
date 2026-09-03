@@ -85,4 +85,16 @@
 ## Trabajo futuro (fuera de este plan)
 
 - Extensiones propietarias de Qorvo (calibración, test de RF) — ver [protocolo-uci.md §6](protocolo-uci.md#6-extensiones-propietarias-de-qorvo).
-- Transporte alternativo (p. ej. puente BLE), si se replica el patrón de la rama `hardware/ble-bridge-nrf52840` del proyecto hermano.
+- Transporte alternativo (p. ej. puente BLE), si se replica el patrón de la rama `hardware/ble-bridge-nrf52840` del proyecto hermano — **con la salvedad documentada abajo**: ese puente no sirve tal cual para este proyecto.
+- Medición de distancia real con una segunda placa (`Controller`/`Controlee`) y decodificación de las mediciones individuales de `RANGING_DATA_NTF` (ver [referencia-comandos-uci.md §4.1](referencia-comandos-uci.md#41-ranging_start--clientranging_startsession_handle)).
+- `SESSION_GET_APP_CONFIG` y el resto de los ~90 parámetros de `App.defs` (ver [protocolo-uci.md §2.2](protocolo-uci.md#22-session_set_app_config-bloque-tvs-y-máquina-de-estados-confirmada)).
+
+### Nota: el puente BLE del proyecto hermano no sirve como segunda placa para este proyecto
+
+Se investigó si la placa que anuncia por Bluetooth con nombre tipo `UWB-Node-N` (confirmado que existe al menos `UWB-Node-2`, visible en un escaneo BLE real) podía usarse como segundo dispositivo UWB para probar `RANGING_START`/`RANGING_STOP` con un par real. Conclusión, tras revisar `i-mop-qorvo-CLI-script` (rama `hardware/ble-bridge-nrf52840`): **no, no sin trabajo adicional significativo**, por tres motivos confirmados contra esa documentación:
+
+1. Ese setup es un DWM3001C cableado por UART a una placa **nRF52840 separada** que hace de puente BLE, con el firmware **CLI de texto** (`STAT`/`INITF`/...) — no el firmware UCI binario que necesita este proyecto.
+2. El protocolo sobre el enlace BLE es texto plano ASCII sobre Nordic UART Service (comandos con prefijo `"qorvo "`, reensamblados por línea) — no el framing binario `MT`/`PBF`/`GID`/`OID` de UCI. Un `UciClient` no podría hablarle aunque tuviera un transporte BLE.
+3. Una vez montado el puente, **el USB nativo de esa DWM3001C queda inaccesible** para consola (el firmware enruta la consola a USB *o* a los pines UART hacia el nRF52840, nunca a ambos — revertirlo requiere acceso físico a esos pines), así que tampoco se puede simplemente conectarla por USB con el firmware UCI sin desarmar el puente.
+
+**Conclusión práctica:** para probar ranging real entre dos dispositivos con este proyecto hace falta una placa DWM3001CDK **adicional, dedicada**, conectada por USB directo y con el firmware `*-UCI-FreeRTOS.hex` flasheado — no la reutilización de las placas ya comprometidas al banco BLE del proyecto hermano.

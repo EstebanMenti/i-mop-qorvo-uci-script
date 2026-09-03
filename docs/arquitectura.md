@@ -1,7 +1,7 @@
 # Arquitectura del software
 
 > **Propósito:** definir el diseño de capas del paquete `dwm3001c_uci`, las responsabilidades de cada módulo y las reglas de dependencia entre ellos.
-> **Alcance:** diseño previo a la implementación (ver estado del proyecto en [../README.md](../README.md)). Sirve de referencia obligatoria durante la implementación descripta en [plan-implementacion.md](plan-implementacion.md).
+> **Alcance:** diseño de referencia, ya implementado para las fases F0–F6 (ver estado real del proyecto en [../README.md](../README.md) y [plan-implementacion.md](plan-implementacion.md)). Este documento se mantiene sincronizado con el código — si algo cambia, se actualiza en el mismo PR.
 
 ---
 
@@ -55,17 +55,17 @@ Este diseño reproduce, adaptado a un protocolo binario, el patrón de 4+1 capas
 
 ### 3.2 `uci/`
 
-- `enums.py`: `MessageType` (Command/Response/Notification/Data), `Gid`, `OidCore`, `OidSession`, `OidRanging`, `OidTest`, `Status` — ver tablas completas en [protocolo-uci.md](protocolo-uci.md).
-- `framing.py`: codificación de un mensaje lógico (`MT`, `PBF`, `GID`, `OID`, payload) a bytes de trama(s), y el camino inverso: reensamblado de tramas fragmentadas (`PBF`) en un mensaje lógico completo antes de exponerlo.
-- `codec.py`: (de)serialización de los payloads TLV/estructurados de cada comando conocido (p. ej. `GET_DEVICE_INFO` response, `SESSION_STATUS_NTF`).
+- `enums.py`: `MessageType` (Command/Response/Notification/Data), `Gid`, `OidCore`, `OidSession`, `OidRanging`, `OidTest`, `Status`, `SessionType`, `SessionState`, `SessionStateChangeReason`, `DeviceState`, `AppConfigParam`, `DeviceType`, `DeviceRole`, `MultiNodeMode`, `RangingRoundUsage`, `RangingMeasType` — ver tablas completas en [protocolo-uci.md](protocolo-uci.md).
+- `framing.py`: codificación de un mensaje lógico (`MT`, `PBF`, `GID`, `OID`, payload) a bytes de trama(s), y el camino inverso: reensamblado de tramas fragmentadas (`PBF`) en un mensaje lógico completo antes de exponerlo (`StreamDecoder`). También define `UciFramingError` (excepción propia de esta capa, no hereda de `UciError` de `core/`).
+- `app_config.py`: codec **TVS** (Tag-Value-Size) del bloque de parámetros de `SESSION_SET_APP_CONFIG` (`encode_app_config`) — es el único "codec de payload" que vive en esta capa; el resto de los payloads por comando se decodifican en `core/models.py` (ver más abajo, es una desviación deliberada del diseño original de este documento: la mayoría de los formatos de payload no son genéricos como TVS, así que decodificarlos junto al cliente que los usa resultó más simple que un `uci/codec.py` separado).
 - Módulo puro: sin sockets, sin puertos serie, sin logging de I/O. Recibe y devuelve bytes/objetos de datos (`dataclass`).
 
 ### 3.3 `core/`
 
-- `client.py`: `UciClient` — API de alto nivel (`reset()`, `get_device_info()`, `get_caps()`, `session_init(session_id, session_type)`, `ranging_start(session_id)`, ...). Internamente usa `uci/` para codificar el comando, lo envía por `transport/`, espera la `Response` correlacionada (mismo `GID`/`OID`, con timeout configurable) y la decodifica.
-- Cola/callback de **notificaciones**: las `Notification` no correlacionadas con un comando en curso se despachan a quien se suscriba (p. ej. la suite de validación esperando un `SESSION_STATUS_NTF` concreto).
-- `errors.py`: jerarquía `UciError` (`UciTimeoutError`, `UciStatusError`, `UciFramingError`).
-- `models.py`: `dataclasses` de las respuestas/notificaciones parseadas (`DeviceInfo`, `Capabilities`, `SessionStatus`, `RangingData`, ...).
+- `client.py`: `UciClient` — API de alto nivel. Grupo `Core`: `reset()`, `get_device_info()`, `get_caps_raw()`. Grupo `Session`: `session_init(session_id, session_type)`, `session_set_app_config(session_handle, ...)`, `session_deinit(session_handle)`, `get_session_state(session_handle)`, `get_session_count()`. Grupo `Ranging`: `ranging_start(session_handle)`, `ranging_stop(session_handle)`, `get_ranging_count(session_handle)`. Ver el detalle de cada uno, con bytes reales, en [referencia-comandos-uci.md](referencia-comandos-uci.md). Internamente usa `uci/` para codificar el comando, lo envía por `transport/`, espera la `Response` correlacionada (mismo `GID`/`OID`, con timeout configurable) y la decodifica.
+- Notificaciones: las `Notification` no correlacionadas con el comando en curso no se descartan — se acumulan en `UciClient.notifications` (una lista simple, no una cola con suscripción por ahora) para que quien las necesite (p. ej. la suite de validación) las inspeccione.
+- `errors.py`: jerarquía `UciError` (`UciTimeoutError`, `UciPayloadError`, `UciStatusError`).
+- `models.py`: `dataclasses` de las respuestas/notificaciones parseadas y sus funciones `parse_*`: `DeviceInfo`/`VersionTriplet` (`parse_device_info`), `SessionInitResult` (`parse_session_init_result`), `SessionStatusNotification` (`parse_session_status_notification`), `AppConfigResult`/`RejectedAppConfigParam` (`parse_app_config_response`), `RangingDataNotification` (`parse_ranging_data_notification`, solo decodifica el header de 25 bytes — las mediciones individuales quedan crudas).
 
 ### 3.4 `validation/`
 
@@ -75,16 +75,18 @@ Este diseño reproduce, adaptado a un protocolo binario, el patrón de 4+1 capas
 
 ### 3.5 `app/`
 
+**Pendiente — fase F7, todavía no implementada** (ver [plan-implementacion.md](plan-implementacion.md)). Diseño previsto, sin cambios:
+
 - `cli.py`: comandos Typer (`ports`, `info`, `validate`, ...), construye el transporte y el `UciClient` reales y se los pasa a `validation/`.
 - `config.py`, `logging_setup.py`: configuración de la aplicación y logging (incluye el log crudo de tráfico serie en hex, ver [../CLAUDE.md §2.2](../CLAUDE.md#22-estilo-y-calidad)).
 
 ## 4. Estrategia de testing sin hardware
 
-- `tests/fixtures/` contiene tramas UCI reales capturadas de una placa (en hex o como bytes), no texto sintético inventado.
-- `FakeTransport` (en `tests/fakes.py`, análogo al de `i-mop-qorvo-CLI-script`) reproduce esas tramas byte a byte ante cada `write()`, permitiendo testear `uci/`, `core/` y `validation/` sin abrir un puerto serie real.
-- Los tests que sí requieren hardware real se marcan `@pytest.mark.hardware` y quedan excluidos de la corrida por defecto.
+- Las capturas reales de hardware (en hex) viven **como constantes a nivel de módulo dentro de cada archivo de test** (p. ej. `REAL_RESET_TX`/`REAL_RESET_RX` en `tests/test_core_client.py`), no en una carpeta `tests/fixtures/` separada — es una diferencia deliberada respecto al diseño original de este documento, más simple para el tamaño actual del proyecto (unas pocas decenas de tramas). Si el volumen de fixtures crece mucho, migrar a archivos separados queda como mejora futura.
+- `FakeTransport` (en `tests/fakes.py`, análogo al de `i-mop-qorvo-CLI-script`) reproduce esas tramas byte a byte ante cada `write()`, permitiendo testear `uci/`, `core/` y `validation/` sin abrir un puerto serie real. Soporta además un modo de secuencia (parámetro `responses`, una lista de capturas que se liberan una por una después de cada `write()`) para simular una conversación de varios comandos consecutivos con el timing correcto.
+- Los tests que sí requieren hardware real se marcan `@pytest.mark.hardware` y quedan excluidos de la corrida por defecto — en la práctica, hasta ahora toda la validación contra hardware real de este proyecto se hizo con scripts manuales puntuales (no tests automatizados marcados `hardware`), y sus resultados se archivaron en `docs/resultados-validacion.md`/`docs/validaciones/`.
 
 ## 5. Puntos de extensión previstos (fuera del alcance inicial)
 
 - **Extensiones propietarias de Qorvo** (`GID` de calibración/test fuera del rango FiRa estándar, ver [protocolo-uci.md §6](protocolo-uci.md#6-extensiones-propietarias-de-qorvo)): si se decide cubrirlas, deberían vivir en un submódulo separado dentro de `uci/`/`core/` (p. ej. `uci/qorvo_ext.py`), nunca mezcladas con la tabla de comandos estándar FiRa.
-- **Transporte BLE**: si en el futuro se replica el patrón de puente Bluetooth de la rama `hardware/ble-bridge-nrf52840` del proyecto CLI hermano, debería entrar como una implementación adicional de la interfaz de `transport/`, sin tocar capas superiores.
+- **Transporte BLE**: si en el futuro se necesita, debería entrar como una implementación adicional de la interfaz de `transport/`, sin tocar capas superiores. **No es tan simple como reutilizar el puente de la rama `hardware/ble-bridge-nrf52840`** del proyecto CLI hermano: se investigó (ver [plan-implementacion.md, "Trabajo futuro"](plan-implementacion.md#nota-el-puente-ble-del-proyecto-hermano-no-sirve-como-segunda-placa-para-este-proyecto)) y ese puente reenvía comandos CLI de texto sobre Nordic UART Service, no el framing binario UCI — haría falta un dispositivo BLE que hable UCI de verdad, no solo portar el transporte.
