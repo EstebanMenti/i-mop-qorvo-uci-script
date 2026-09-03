@@ -89,6 +89,46 @@ class UciClient:
             f"timeout de {self._timeout_s}s esperando Response de GID=0x{gid:02X} OID=0x{oid:02X}"
         )
 
+    def poll_notifications(self, duration_s: float = 0.0) -> list[UciMessage]:
+        """Lee del transporte y decodifica notificaciones espontaneas, sin esperar ningun comando.
+
+        **Importante:** `UciClient` no tiene ningun hilo de fondo escuchando
+        el puerto -- los bytes solo se leen y decodifican como efecto
+        colateral de `_send_command_and_wait_response()` (al enviar un
+        comando y esperar su Response). Si el código llamador simplemente
+        duerme (`time.sleep()`) esperando notificaciones espontáneas (p. ej.
+        `RANGING_DATA_NTF` mientras una sesión de ranging está activa, sin
+        enviar ningún otro comando), **no va a ver casi ninguna**: los bytes
+        se acumulan sin leer en el buffer del sistema operativo hasta la
+        próxima llamada que sí lea el transporte, momento en el que sólo se
+        alcanza a procesar lo que entra en un puñado de lecturas antes de
+        encontrar la Response que esa llamada esperaba (confirmado contra
+        hardware real: sólo se observaban 2-3 notificaciones por ronda de
+        `ranging_start()`/`ranging_stop()`, nunca las decenas esperadas
+        durante una ventana de varios segundos). Para observar notificaciones
+        durante una ventana de tiempo, llamar a este método en un loop en vez
+        de dormir.
+
+        Devuelve las notificaciones nuevas decodificadas en esta llamada
+        (también quedan agregadas a `self.notifications`, igual que las que
+        llegan durante `_send_command_and_wait_response()`).
+        """
+        new_notifications: list[UciMessage] = []
+        deadline = time.monotonic() + duration_s
+        while True:
+            chunk = self._transport.read(self._read_chunk_size)
+            if chunk:
+                for message in self._decoder.feed(chunk):
+                    if message.mt == MessageType.NOTIFICATION:
+                        self.notifications.append(message)
+                        new_notifications.append(message)
+                    # Una Response sin ningun comando en curso esperandola no
+                    # deberia pasar en uso normal; este metodo no falla por
+                    # eso, simplemente la ignora (no hay a quien devolversela).
+            if time.monotonic() >= deadline:
+                break
+        return new_notifications
+
     def reset(self) -> Status:
         """Envia `CORE_RESET`. Payload confirmado contra hardware real: 1 byte (0x00)."""
         message = self._send_command_and_wait_response(Gid.CORE, OidCore.RESET, b"\x00")

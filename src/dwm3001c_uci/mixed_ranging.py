@@ -115,9 +115,11 @@ def run_mixed_ranging(
             successful_rounds = 0
             deadline = time.monotonic() + duration_s
             while time.monotonic() < deadline:
-                time.sleep(poll_interval_s)
-                pending = list(uci.notifications)
-                uci.notifications.clear()
+                # uci.poll_notifications(), no time.sleep(): UciClient no tiene
+                # ningun hilo de fondo leyendo el puerto -- sin esto, casi
+                # ninguna RANGING_DATA_NTF espontanea se procesaria (ver
+                # docstring de poll_notifications en core/client.py).
+                pending = uci.poll_notifications(poll_interval_s)
                 for notification in pending:
                     if notification.gid != 0x02 or notification.oid != 0x00:
                         continue

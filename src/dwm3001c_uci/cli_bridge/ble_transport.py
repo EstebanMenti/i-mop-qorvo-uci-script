@@ -68,6 +68,12 @@ class BleShellTransport:
         self._client: BleakClient | None = None
         self._buffer = ""
         self._prompt_event: asyncio.Event | None = None
+        self._last_target: str | None = None
+        """Nombre/direccion pasado a `connect()`, para reconectar automaticamente
+        si el bridge cierra la conexion por inactividad (confirmado en
+        i-mop-qorvo-CLI-script/src/dwm3001c_cli/transport/ble_link.py:
+        el bridge desconecta espontaneamente ~7-8s despues de la ultima
+        actividad -- no es un bug, es el comportamiento normal del bridge)."""
 
     def _call(self, coro: Any, timeout: float) -> Any:
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
@@ -114,7 +120,22 @@ class BleShellTransport:
         await client.connect()
         await client.start_notify(NUS_TX_CHAR_UUID, self._handle_notify)
         self._client = client
+        self._last_target = name_or_address
         return client.address
+
+    async def _async_ensure_connected(self, scan_timeout_s: float = DEFAULT_SCAN_TIMEOUT_S) -> None:
+        """Reconecta automaticamente si el bridge cerro la conexion por inactividad.
+
+        Sin esto, un `send_line` despues de un hueco de inactividad (~7-8s,
+        ver nota en `__init__`) fallaria con un `BleShellTimeoutError` ambiguo
+        en vez de simplemente reconectar y seguir -- confirmado contra
+        hardware real (ver docs/ranging-mixto-cli-uci.md).
+        """
+        if self._client is not None and self._client.is_connected:
+            return
+        if self._last_target is None:
+            raise BleShellError("no conectado: llamar a connect() primero")
+        await self._async_connect(self._last_target, scan_timeout_s)
 
     def _handle_notify(self, _sender: Any, data: bytearray) -> None:
         text = bytes(data).decode("utf-8", errors="replace")
@@ -142,8 +163,8 @@ class BleShellTransport:
         )
 
     async def _async_send_line(self, text: str, timeout_s: float) -> str:
-        if self._client is None or self._prompt_event is None:
-            raise BleShellError("no conectado: llamar a connect() primero")
+        await self._async_ensure_connected()
+        assert self._client is not None and self._prompt_event is not None
 
         self._prompt_event.clear()
         start = len(self._buffer)

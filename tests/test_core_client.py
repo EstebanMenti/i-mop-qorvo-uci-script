@@ -282,3 +282,30 @@ def test_ranging_start_on_configured_session_returns_ok_and_captures_ranging_dat
         n for n in client.notifications if n.gid == 0x02 and n.oid == 0x00
     ]
     assert len(ranging_data_notifications) == 2
+
+
+def test_poll_notifications_reads_without_sending_any_command() -> None:
+    # SESSION_STATUS_NTF real disponible en el transporte sin que el cliente
+    # haya enviado ningun comando: poll_notifications() debe leerla igual.
+    notification_bytes = bytes.fromhex("61 02 00 06 01 00 00 00 00 00")
+    transport = FakeTransport(rx_data=notification_bytes)
+    client = UciClient(transport)
+
+    result = client.poll_notifications(duration_s=0.05)
+
+    assert transport.tx_log == []
+    assert len(result) == 1
+    assert result[0].gid == 0x01
+    assert result[0].oid == 0x02
+    assert result[0].payload == bytes.fromhex("01 00 00 00 00 00")
+    assert client.notifications == result
+
+
+def test_poll_notifications_returns_empty_list_when_nothing_arrives() -> None:
+    transport = FakeTransport(rx_data=b"")
+    client = UciClient(transport)
+
+    result = client.poll_notifications(duration_s=0.05)
+
+    assert result == []
+    assert client.notifications == []
