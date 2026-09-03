@@ -11,9 +11,14 @@ from __future__ import annotations
 import time
 
 from dwm3001c_uci.core.errors import UciTimeoutError
-from dwm3001c_uci.core.models import DeviceInfo, parse_device_info
+from dwm3001c_uci.core.models import (
+    DeviceInfo,
+    SessionInitResult,
+    parse_device_info,
+    parse_session_init_result,
+)
 from dwm3001c_uci.transport.serial_link import Transport
-from dwm3001c_uci.uci.enums import Gid, MessageType, OidCore, Status
+from dwm3001c_uci.uci.enums import Gid, MessageType, OidCore, OidSession, SessionType, Status
 from dwm3001c_uci.uci.framing import StreamDecoder, UciMessage, encode_packet, split_into_packets
 
 DEFAULT_TIMEOUT_S = 2.0
@@ -85,3 +90,45 @@ class UciClient:
         """
         message = self._send_command_and_wait_response(Gid.CORE, OidCore.GET_CAPS, b"")
         return Status(message.payload[0]), message.payload[1:]
+
+    def session_init(self, session_id: int, session_type: SessionType) -> SessionInitResult:
+        """Envia `SESSION_INIT`. Payload: session_id (4 bytes LE) + session_type (1 byte).
+
+        `session_id` es el identificador que propone el host. **El firmware no
+        esta obligado a devolverlo tal cual**: confirmado contra hardware real
+        que puede asignar un `session_handle` distinto (ver
+        `SessionInitResult.session_handle` y docs/protocolo-uci.md). Todos los
+        demas comandos de este grupo (`session_deinit`, `get_session_state`)
+        deben usar ese `session_handle`, no el `session_id` original.
+        """
+        payload = session_id.to_bytes(4, "little") + bytes([session_type])
+        message = self._send_command_and_wait_response(Gid.SESSION, OidSession.INIT, payload)
+        return parse_session_init_result(message.payload)
+
+    def session_deinit(self, session_handle: int) -> Status:
+        """Envia `SESSION_DEINIT`. Payload: session_handle (4 bytes LE).
+
+        `session_handle` es el valor devuelto por `session_init()`, no
+        necesariamente el `session_id` que se le paso a ese comando (ver nota
+        en `session_init`).
+        """
+        payload = session_handle.to_bytes(4, "little")
+        message = self._send_command_and_wait_response(Gid.SESSION, OidSession.DEINIT, payload)
+        return Status(message.payload[0])
+
+    def get_session_state(self, session_handle: int) -> tuple[Status, int]:
+        """Envia `SESSION_GET_STATE`. Devuelve `(Status, SessionState)` crudo.
+
+        `session_handle`: ver nota en `session_init`. `SessionState` se
+        devuelve como `int`, no como el enum, para tolerar un valor fuera del
+        rango confirmado sin lanzar excepcion (mismo criterio que
+        `core/models.py` aplica a `SessionStatusNotification.reason_code`).
+        """
+        payload = session_handle.to_bytes(4, "little")
+        message = self._send_command_and_wait_response(Gid.SESSION, OidSession.GET_STATE, payload)
+        return Status(message.payload[0]), message.payload[1]
+
+    def get_session_count(self) -> tuple[Status, int]:
+        """Envia `SESSION_GET_COUNT`. Devuelve `(Status, cantidad_de_sesiones)`."""
+        message = self._send_command_and_wait_response(Gid.SESSION, OidSession.GET_COUNT, b"")
+        return Status(message.payload[0]), message.payload[1]

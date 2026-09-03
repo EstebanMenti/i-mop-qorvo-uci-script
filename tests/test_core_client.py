@@ -9,7 +9,7 @@ import pytest
 
 from dwm3001c_uci.core.client import UciClient
 from dwm3001c_uci.core.errors import UciTimeoutError
-from dwm3001c_uci.uci.enums import Status
+from dwm3001c_uci.uci.enums import SessionState, SessionType, Status
 from tests.fakes import FakeTransport
 
 # CORE_GET_DEVICE_INFO: TX real y RX real (1 sola Response, sin notificaciones).
@@ -92,3 +92,76 @@ def test_get_caps_raw_returns_status_and_remaining_payload() -> None:
     assert transport.tx_log == [REAL_GET_CAPS_TX]
     assert status == Status.OK
     assert len(remaining) == 93
+
+
+# Grupo Session: TX/RX reales, capturados pidiendo session_id=7. El firmware
+# asigno session_handle=1 (distinto del id pedido - ver docs/protocolo-uci.md
+# Seccion 2.1), asi que las llamadas siguientes usan ese handle=1.
+REAL_SESSION_INIT_TX = bytes.fromhex("21 00 00 05 07 00 00 00 00")
+REAL_SESSION_INIT_RX = bytes.fromhex("41 00 00 05 00 01 00 00 00 61 02 00 06 01 00 00 00 00 00")
+REAL_SESSION_GET_STATE_TX = bytes.fromhex("21 06 00 04 01 00 00 00")
+REAL_SESSION_GET_STATE_RX = bytes.fromhex("41 06 00 02 00 00")
+REAL_SESSION_GET_COUNT_TX = bytes.fromhex("21 05 00 00")
+REAL_SESSION_GET_COUNT_ACTIVE_RX = bytes.fromhex("41 05 00 02 00 01")
+REAL_SESSION_GET_COUNT_EMPTY_RX = bytes.fromhex("41 05 00 02 00 00")
+REAL_SESSION_DEINIT_TX = bytes.fromhex("21 01 00 04 01 00 00 00")
+REAL_SESSION_DEINIT_RX = bytes.fromhex("41 01 00 01 00 61 02 00 06 01 00 00 00 01 00")
+
+
+def test_session_init_sends_expected_command_and_returns_real_handle() -> None:
+    transport = FakeTransport(rx_data=REAL_SESSION_INIT_RX)
+    client = UciClient(transport)
+
+    result = client.session_init(session_id=7, session_type=SessionType.RANGING)
+
+    assert transport.tx_log == [REAL_SESSION_INIT_TX]
+    assert result.status == Status.OK
+    # El handle real (1) difiere del session_id pedido (7): hallazgo confirmado
+    # contra hardware, ver docs/protocolo-uci.md Seccion 2.1.
+    assert result.session_handle == 1
+
+
+def test_session_init_captures_session_status_notification() -> None:
+    transport = FakeTransport(rx_data=REAL_SESSION_INIT_RX)
+    client = UciClient(transport)
+
+    client.session_init(session_id=7, session_type=SessionType.RANGING)
+
+    assert len(client.notifications) == 1
+    notification = client.notifications[0]
+    assert notification.gid == 0x01
+    assert notification.oid == 0x02
+    assert notification.payload == bytes.fromhex("01 00 00 00 00 00")
+
+
+def test_get_session_state_uses_handle_not_original_session_id() -> None:
+    transport = FakeTransport(rx_data=REAL_SESSION_GET_STATE_RX)
+    client = UciClient(transport)
+
+    status, state = client.get_session_state(session_handle=1)
+
+    assert transport.tx_log == [REAL_SESSION_GET_STATE_TX]
+    assert status == Status.OK
+    assert SessionState(state) == SessionState.INIT
+
+
+def test_get_session_count_reflects_active_and_then_empty() -> None:
+    transport = FakeTransport(rx_data=REAL_SESSION_GET_COUNT_ACTIVE_RX)
+    client = UciClient(transport)
+    assert client.get_session_count() == (Status.OK, 1)
+
+    transport_empty = FakeTransport(rx_data=REAL_SESSION_GET_COUNT_EMPTY_RX)
+    client_empty = UciClient(transport_empty)
+    assert client_empty.get_session_count() == (Status.OK, 0)
+
+
+def test_session_deinit_sends_expected_command_and_captures_notification() -> None:
+    transport = FakeTransport(rx_data=REAL_SESSION_DEINIT_RX)
+    client = UciClient(transport)
+
+    status = client.session_deinit(session_handle=1)
+
+    assert transport.tx_log == [REAL_SESSION_DEINIT_TX]
+    assert status == Status.OK
+    assert len(client.notifications) == 1
+    assert client.notifications[0].payload == bytes.fromhex("01 00 00 00 01 00")
