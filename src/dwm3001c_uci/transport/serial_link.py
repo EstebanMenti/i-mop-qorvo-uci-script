@@ -1,9 +1,8 @@
 """Transporte serie sobre el puerto COM virtual (USB CDC ACM) de la placa DWM3001CDK.
 
-Los parametros de puerto por defecto (``DEFAULT_BAUDRATE``) estan marcados como
-``[Sin confirmar]`` en ``docs/protocolo-uci.md`` Seccion 5: no se debe asumir que
-coinciden con los del firmware CLI de texto sin verificarlo contra hardware real
-(ver ``docs/plan-implementacion.md`` fase F1).
+``DEFAULT_BAUDRATE`` esta confirmado para el firmware UCI (no por analogia con el
+firmware CLI): ver docs/protocolo-uci.md Seccion 5, fuente
+``SDK/Tools/uwb-qorvo-tools/lib/uwb-uci/uci/addin_transport_uart.py``.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from typing import Protocol
 import serial
 
 DEFAULT_BAUDRATE = 115200
-"""Valor provisorio, heredado del firmware CLI. [Sin confirmar] para firmware UCI."""
+"""Confirmado contra la herramienta de referencia de Qorvo (ver docstring del modulo)."""
 
 DEFAULT_TIMEOUT_S = 1.0
 

@@ -22,10 +22,10 @@
 ## F1 — Transporte serie
 
 - Implementar `transport/serial_link.py` (apertura/cierre, lectura no bloqueante, escritura) y `transport/discovery.py` (enumeración de puertos candidatos).
-- **Tarea de investigación obligatoria:** confirmar contra la documentación del SDK los parámetros de puerto serie del binario `*-UCI-FreeRTOS.hex` (baud rate, bits, paridad, control de flujo) — no asumir los valores del firmware CLI. Documentar el resultado en [protocolo-uci.md §5](protocolo-uci.md#5-transporte), reemplazando el `[Sin confirmar]`.
+- ~~Tarea de investigación obligatoria: confirmar baud rate contra el SDK~~ — **hecho:** 115200, confirmado contra `addin_transport_uart.py` (ver [protocolo-uci.md §5](protocolo-uci.md#5-transporte)). Bits/paridad no vienen explícitos en esa fuente; se usa 8N1 (default de pyserial) hasta que una prueba real indique lo contrario.
 - Implementar `FakeTransport` en `tests/fakes.py` para uso de las fases siguientes.
 
-**Aceptación:** se puede abrir el puerto de una placa con firmware UCI real y leer/escribir bytes crudos; parámetros de puerto documentados y confirmados.
+**Aceptación:** se puede abrir el puerto de una placa con firmware UCI real y leer/escribir bytes crudos; parámetros de puerto documentados y confirmados. **Pendiente:** validar contra hardware real que el firmware efectivamente cargado en la placa disponible es `*-UCI-FreeRTOS.hex` (una placa DWM3001CDK puede tener cualquier firmware del SDK cargado).
 
 ## F2 — Framing y enums UCI
 
@@ -37,11 +37,11 @@
 
 ## F3 — Cliente UCI: grupo `Core`
 
-- Implementar `core/client.py` (`UciClient`) con los comandos `Core`: `reset()`, `get_device_info()`, `get_caps()`, `set_config()`, `get_config()`.
-- Implementar correlación comando↔respuesta con timeout configurable, y despacho de notificaciones (`DEVICE_STATUS_NTF`, `GENERIC_ERROR_NTF`) por un canal separado.
-- Implementar `core/errors.py` (`UciError`, `UciTimeoutError`, `UciStatusError`, `UciFramingError`) y `core/models.py` (`DeviceInfo`, `Capabilities`).
+- ✅ `core/client.py` (`UciClient`) con `reset()`, `get_device_info()`, `get_caps_raw()` — correlación comando↔respuesta con timeout configurable, y notificaciones (`DEVICE_STATUS_NTF`) capturadas en `UciClient.notifications` en vez de descartadas.
+- ✅ `core/errors.py` (`UciError`, `UciTimeoutError`, `UciStatusError`, `UciPayloadError`) y `core/models.py` (`DeviceInfo`, `VersionTriplet`, `parse_device_info`).
+- **Pendiente:** `set_config()`, `get_config()` (no probados todavía) y decodificación completa de la lista TLV de `get_caps_raw()` (por ahora devuelve `(Status, bytes)` sin parsear) — quedan para una iteración siguiente.
 
-**Aceptación:** contra hardware real, `get_device_info()` y `get_caps()` devuelven datos coherentes con lo esperado del chip DW3xxx; tests unitarios con `FakeTransport` cubren el camino feliz y al menos un `Status` de error.
+**Aceptación:** ✅ validado contra hardware real (placa en `COM29`, firmware UCI de `QM33SDK-1.1.1`): `reset()` devuelve `Status.OK` y captura 2 notificaciones `DEVICE_STATUS_NTF` intercaladas; `get_device_info()` devuelve `uci_version=2.0.0`, `mac_version=2.0.0`, `phy_version=2.0.0`, `uci_test_version=1.1.0`; `get_caps_raw()` devuelve `Status.OK` y 93 bytes de payload TLV. 40 tests unitarios con `FakeTransport`, usando capturas reales de estos tres intercambios como fixtures (no datos sintéticos). Hallazgo registrado: `CORE_RESET` requiere payload de 1 byte (`0x00`), no vacío — confirmado contra `fira.py` del SDK y contra hardware.
 
 ## F4 — Cliente UCI: grupo `Session`
 
