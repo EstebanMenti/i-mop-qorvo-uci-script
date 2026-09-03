@@ -54,10 +54,11 @@
 
 ## F5 — Cliente UCI: grupo `Ranging`
 
-- Extender `UciClient` con `ranging_start()`, `ranging_stop()`, `get_ranging_count()`.
-- Parsear las notificaciones de datos de ranging (nombre/formato a confirmar, ver [protocolo-uci.md §3](protocolo-uci.md#3-notificaciones-a-manejar-de-forma-asíncrona)).
+- ✅ `UciClient` extendido con `ranging_start(session_handle)`, `ranging_stop(session_handle)`, `get_ranging_count(session_handle)` — mismo patrón de payload que `Session` (`session_handle`, 4 bytes LE), confirmado contra `fira.py` del SDK y contra hardware real.
+- **Pendiente (requiere dos placas, no disponibles en esta iteración):** parsear la notificación de datos de ranging. Según `fira.py` del SDK (mapa de notificaciones, comentado en esa fuente) llegaría con el mismo `GID`/`OID` que `RANGING_START` pero `MT=NOTIFICATION` — **`[Sin confirmar]`**, no se pudo verificar contra hardware real con un solo dispositivo. `UciClient.ranging_start()` no la decodifica todavía; queda cruda en `UciClient.notifications`.
+- **Pendiente:** `SESSION_SET_APP_CONFIG` (fase F4, diferido) es un prerrequisito real para que `RANGING_START` tenga éxito — confirmado contra hardware (ver aceptación abajo).
 
-**Aceptación:** con dos placas (`Controller`/`Controlee`), se completa un ciclo de ranging real y se recibe al menos una medición vía notificación, decodificada a un `RangingData` con distancia.
+**Aceptación:** ✅ validado contra hardware real (una sola placa disponible, sin par para completar un ranging real): `get_ranging_count()` antes de iniciar devuelve `Status.OK` con conteo `0`; `ranging_start()`/`ranging_stop()` sobre una sesión creada pero sin configurar devuelven `Status.ERROR_SESSION_NOT_CONFIGURED` — resultado esperado y coherente (confirma que el comando llega, se parsea y el firmware aplica la regla de negocio correcta), no una falla del cliente. **No se validó** un ciclo de ranging exitoso con medición de distancia real: eso requiere `SESSION_SET_APP_CONFIG` implementado y una segunda placa (`Controller`/`Controlee`), pendiente para una iteración futura.
 
 ## F6 — Suite de validación
 

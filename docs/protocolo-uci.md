@@ -64,6 +64,9 @@ Los siguientes formatos de payload están confirmados tanto contra `fira.py`/`fi
 | `SESSION_GET_STATE` | `session_handle` (4 bytes LE). | `Status` (1) + `SessionState` (1). |
 | `SESSION_GET_COUNT` | Vacío. | `Status` (1) + cantidad de sesiones (1). |
 | `SESSION_STATUS_NTF` (notificación) | — | `session_id`/`session_handle` (4 bytes LE) + `SessionState` (1) + código de motivo (1, ver `SessionStateChangeReason`). |
+| `RANGING_START` | `session_handle` (4 bytes LE). | `Status` (1). Requiere que la sesión ya haya sido configurada (`SESSION_SET_APP_CONFIG`, diferido) — sin eso, confirmado contra hardware real que devuelve `Status.ERROR_SESSION_NOT_CONFIGURED`. |
+| `RANGING_STOP` | `session_handle` (4 bytes LE). | `Status` (1). |
+| `RANGING_GET_COUNT` | `session_handle` (4 bytes LE). | `Status` (1) + cantidad de mediciones (4 bytes LE), presente **solo** si `Status == OK`. |
 
 > **Advertencia confirmada contra hardware real — `session_handle` puede diferir de `session_id`:** al pedir `SESSION_INIT` con `session_id=7`, el firmware devolvió `session_handle=1`. Usar despues ese `7` (el id original) en `SESSION_GET_STATE`/`SESSION_DEINIT` devuelve `Status.ERROR_SESSION_NOT_EXIST`; hay que usar el `session_handle` de la Response de `SESSION_INIT`. El cliente Python de referencia de Qorvo (`fira.py`) no hace esta distinción — reutiliza la misma variable `sid` en todos los métodos, asumiendo implícitamente que son iguales — por lo que **no se debe copiar ese supuesto sin verificar**. `src/dwm3001c_uci/core/client.py` ya reflejó esto: `session_deinit()`/`get_session_state()` reciben `session_handle`, no `session_id`.
 >
@@ -76,7 +79,7 @@ Al menos las siguientes `Notification` pueden llegar sin estar correlacionadas 1
 - `CORE_DEVICE_STATUS_NTF` (`GID=0x00`, `OID=0x01`)
 - `CORE_GENERIC_ERROR_NTF` (`GID=0x00`, `OID=0x07`)
 - `SESSION_STATUS_NTF` (`GID=0x01`, `OID=0x02`)
-- Notificaciones de datos de ranging (nombre exacto y `OID` **`[Sin confirmar]`** — verificar contra la especificación; en la CLI de texto del proyecto hermano el equivalente es `SESSION_INFO_NTF`).
+- Notificaciones de datos de ranging: `fira.py` del SDK sugiere `GID=0x02` (Ranging), `OID=0x00` (mismo que `RANGING_START`) con `MT=NOTIFICATION` — **`[Sin confirmar]`**, no se pudo verificar contra hardware real con una sola placa (se necesita una sesión de ranging exitosa entre dos dispositivos). En la CLI de texto del proyecto hermano el equivalente es `SESSION_INFO_NTF`.
 
 ## 4. Códigos de estado (`Status`)
 
