@@ -1,0 +1,26 @@
+# Entorno virtual
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Salidas en tiempo de ejecución (ver CLAUDE.md §3)
+logs/
+reports/
+
+# Herramientas de tipos/lint/tests
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor / SO
+.vscode/
+.idea/
+Thumbs.db
